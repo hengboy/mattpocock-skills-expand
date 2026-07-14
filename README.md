@@ -57,13 +57,14 @@ ln -s $(pwd)/mattpocock-skills-expand/skills/execute-mattpocock-spec ~/.agents/s
 
 ```
 mattpocock-skills-expand/
-├── skills/
-│   └── execute-mattpocock-spec/
-│       ├── SKILL.md              # 技能定义
-│       ├── state-schema.json      # state.json 的 JSON Schema
-│       ├── README.md              # 项目文档
-│       └── agents/
-│           └── openai.yaml        # Codex UI 元数据
+├── README.md
+├── .gitignore
+└── skills/
+    └── execute-mattpocock-spec/
+        ├── SKILL.md              # 技能定义
+        ├── state-schema.json      # state.json 的 JSON Schema
+        └── agents/
+            └── openai.yaml        # Codex UI 元数据
 ```
 
 ## 兼容性
