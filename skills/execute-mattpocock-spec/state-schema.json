@@ -150,7 +150,7 @@
           "ts": { "type": "string", "format": "date-time" },
           "event": {
             "type": "string",
-            "enum": ["init", "resumed", "dispatched", "done", "blocked", "reviewing", "complete"]
+            "enum": ["init", "resumed", "dispatched", "done", "blocked", "reviewing", "fixing", "complete"]
           },
           "detail": { "type": ["string", "null"] },
           "ticket_id": { "type": ["string", "null"], "description": "此事件所涉及的 Ticket ID（如果有）。" }
