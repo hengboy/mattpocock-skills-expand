@@ -13,17 +13,17 @@
 ### skills.sh（推荐）
 
 ```bash
-npx skills@latest add hengboy/execute-mattpocock-spec
+npx skills@latest add hengboy/mattpocock-skills-expand
 ```
 
 ### 手动安装
 
 ```bash
 # 克隆到本地
-git clone git@github.com:hengboy/execute-mattpocock-spec.git
+git clone git@github.com:hengboy/mattpocock-skills-expand.git
 
 # 链接到 agents 技能目录
-ln -s $(pwd)/execute-mattpocock-spec ~/.agents/skills/execute-mattpocock-spec
+ln -s $(pwd)/mattpocock-skills-expand/skills/execute-mattpocock-spec ~/.agents/skills/execute-mattpocock-spec
 ```
 
 ## 前置条件
@@ -56,11 +56,14 @@ ln -s $(pwd)/execute-mattpocock-spec ~/.agents/skills/execute-mattpocock-spec
 ## 文件结构
 
 ```
-execute-mattpocock-spec/
-├── SKILL.md              # 技能定义
-├── state-schema.json      # state.json 的 JSON Schema
-└── agents/
-    └── openai.yaml        # Codex/Codex UI 元数据
+mattpocock-skills-expand/
+├── skills/
+│   └── execute-mattpocock-spec/
+│       ├── SKILL.md              # 技能定义
+│       ├── state-schema.json      # state.json 的 JSON Schema
+│       ├── README.md              # 项目文档
+│       └── agents/
+│           └── openai.yaml        # Codex UI 元数据
 ```
 
 ## 兼容性
