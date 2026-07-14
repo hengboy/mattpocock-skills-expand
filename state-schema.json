@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mattpocock/skills/execute-mattpocock-spec/state.schema.json",
+  "title": "execute-mattpocock-spec state.json",
+  "description": "/execute-mattpocock-spec 的生命周期检查点。编排器读取它以从最后一个完成的 Ticket 恢复，永不从头开始。所有时间使用 Asia/Shanghai 时区（UTC+8）。",
+  "type": "object",
+  "required": ["spec", "mode", "status", "baseline", "branch", "created_at", "updated_at", "tickets", "review", "history"],
+  "additionalProperties": false,
+  "properties": {
+    "spec": {
+      "type": "object",
+      "description": "正在执行的 MattPocock Spec。",
+      "required": ["ref", "tracker", "feature_slug"],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "type": "string",
+          "description": "用户传入的 MattPocock Spec 引用——Issue 编号 (#N)、Tracker URL 或 .scratch/<feature>/spec.md 路径。"
+        },
+        "title": {
+          "type": "string",
+          "description": "人类可读的 MattPocock Spec 标题。"
+        },
+        "tracker": {
+          "type": "string",
+          "enum": ["local", "github", "gitlab", "other"],
+          "description": "从 docs/agents/issue-tracker.md 读取的 Tracker 类型。"
+        },
+        "feature_slug": {
+          "type": "string",
+          "description": "用于 .scratch/<feature>/ 目录的 slug。"
+        }
+      }
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["single", "multi"],
+      "description": "single = 未拆分的 MattPocock Spec（一次 /implement 运行）；multi = 由 /to-tickets 拆分（每个 Ticket 一个子代理）。"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["executing", "reviewing", "complete"],
+      "description": "生命周期阶段。executing -> 分派 Ticket；reviewing -> 最终 /code-review；complete -> 完成。"
+    },
+    "baseline": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{7,40}$",
+      "description": "在任何工作开始前记录的 commit SHA。最终的 /code-review 对 <baseline>...HEAD 做 diff。"
+    },
+    "branch": {
+      "type": "string",
+      "description": "所有 Ticket commit 落地的 git 分支。"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "tickets": {
+      "type": "array",
+      "description": "有序列表。mode=single 时只有一个条目，其 ref 即为 MattPocock Spec 本身。mode=multi 时是 /to-tickets 的切片，按 NN 编号以 blockers-first 排序。",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "level", "blocked_by", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "拆分 Ticket 的 NN 编号（如 '01'），或未拆分 Ticket 的 'spec'。"
+          },
+          "level": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Frontier 层级编号。Level 0 无阻塞项，Level N 的所有阻塞项在 Level < N 中。同层 Ticket 可并行分派。"
+          },
+          "title": {
+            "type": "string"
+          },
+          "blocking_edges": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "必须在此 Ticket 之前完成的 Ticket ID。空表示立即可开始。（blocked_by 的别名；两者均可使用。）"
+          },
+          "blocked_by": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "阻塞此 Ticket 的 Ticket ID。空表示立即可开始。"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "in_progress", "done", "blocked"],
+            "description": "pending=未开始；in_progress=子代理正在运行；done=已提交；blocked=子代理无法完成。"
+          },
+          "start_commit": {
+            "type": ["string", "null"],
+            "pattern": "^[0-9a-f]{7,40}$"
+          },
+          "end_commit": {
+            "type": ["string", "null"],
+            "pattern": "^[0-9a-f]{7,40}$",
+            "description": "此 Ticket 落地后的 HEAD commit。用于验证 checkpoint 与 git 的一致性。"
+          },
+          "subagent_task_id": {
+            "type": ["string", "null"],
+            "description": "子代理的 task_id，可用于恢复同一个子代理会话（opencode 的 Task 工具、Codex/Claude Code 的 Agent 工具均支持）。"
+          },
+          "error": {
+            "type": ["string", "null"],
+            "description": "status 为 blocked 或 failed 时的失败或阻塞文本。"
+          },
+          "started_at": { "type": ["string", "null"], "format": "date-time" },
+          "completed_at": { "type": ["string", "null"], "format": "date-time" }
+        }
+      }
+    },
+    "review": {
+      "type": "object",
+      "description": "最终全 MattPocock Spec /code-review 的状态。",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pending", "in_progress", "done"]
+        },
+        "fixed_point": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{7,40}$",
+          "description": "评审所对比的 commit。通常等于 baseline。"
+        },
+        "findings_summary": {
+          "type": ["string", "null"],
+          "description": "评审完成后 Standards 和 MattPocock Spec 发现的简短摘要。"
+        },
+        "started_at": { "type": ["string", "null"], "format": "date-time" },
+        "completed_at": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "history": {
+      "type": "array",
+      "description": "仅追加、最新在后的生命周期事件时间线，用于审计。",
+      "items": {
+        "type": "object",
+        "required": ["ts", "event"],
+        "additionalProperties": false,
+        "properties": {
+          "ts": { "type": "string", "format": "date-time" },
+          "event": {
+            "type": "string",
+            "enum": ["init", "resumed", "dispatched", "done", "blocked", "reviewing", "complete"]
+          },
+          "detail": { "type": ["string", "null"] },
+          "ticket_id": { "type": ["string", "null"], "description": "此事件所涉及的 Ticket ID（如果有）。" }
+        }
+      }
+    }
+  }
+}
