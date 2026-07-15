@@ -1,0 +1,11 @@
+{
+  "name": "mattpocock-skills-expand",
+  "private": true,
+  "scripts": {
+    "test:state-schema": "node --test tests/state-schema.test.mjs"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
+  }
+}

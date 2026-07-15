@@ -67,7 +67,7 @@
     },
     "tickets": {
       "type": "array",
-      "description": "有序列表。mode=single 时只有一个条目，其 ref 即为 MattPocock Spec 本身。mode=multi 时是 to-tickets skill 的切片，按 NN 编号以 blockers-first 排序。",
+      "description": "有序列表。mode=single 时只有一个 id 为 spec 的条目，其 Spec 来源是顶层 spec.ref。mode=multi 时是 to-tickets skill 的切片，按 NN 编号以 blockers-first 排序。",
       "items": {
         "type": "object",
         "required": ["id", "title", "level", "blocked_by", "status"],
@@ -85,11 +85,6 @@
           "title": {
             "type": "string"
           },
-          "blocking_edges": {
-            "type": "array",
-            "items": { "type": "string" },
-            "description": "必须在此 Ticket 之前完成的 Ticket ID。空表示立即可开始。（blocked_by 的别名；两者均可使用。）"
-          },
           "blocked_by": {
             "type": "array",
             "items": { "type": "string" },
@@ -98,7 +93,7 @@
           "status": {
             "type": "string",
             "enum": ["pending", "in_progress", "done", "blocked"],
-            "description": "pending=未开始；in_progress=子代理正在运行；done=已提交；blocked=子代理无法完成。"
+            "description": "pending=未开始；in_progress=已记录启动信息；done=已提交；blocked=未完成且附带错误。"
           },
           "start_commit": {
             "type": ["string", "null"],
@@ -115,11 +110,48 @@
           },
           "error": {
             "type": ["string", "null"],
-            "description": "status 为 blocked 或 failed 时的失败或阻塞文本。"
+            "description": "仅 status=blocked 时的失败或阻塞文本。"
           },
           "started_at": { "type": ["string", "null"], "format": "date-time" },
           "completed_at": { "type": ["string", "null"], "format": "date-time" }
-        }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "status": { "const": "in_progress" } }, "required": ["status"] },
+            "then": {
+              "required": ["start_commit", "started_at"],
+              "properties": {
+                "start_commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+                "started_at": { "type": "string", "minLength": 1, "format": "date-time" }
+              }
+            }
+          },
+          {
+            "if": { "properties": { "status": { "const": "done" } }, "required": ["status"] },
+            "then": {
+              "required": ["end_commit", "completed_at"],
+              "properties": {
+                "end_commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+                "completed_at": { "type": "string", "minLength": 1, "format": "date-time" }
+              }
+            }
+          },
+          {
+            "if": { "properties": { "status": { "const": "blocked" } }, "required": ["status"] },
+            "then": {
+              "required": ["error"],
+              "properties": {
+                "error": { "type": "string", "minLength": 1 }
+              },
+              "not": {
+                "anyOf": [
+                  { "required": ["end_commit"] },
+                  { "required": ["completed_at"] }
+                ]
+              }
+            }
+          }
+        ]
       }
     },
     "review": {
@@ -143,7 +175,19 @@
         },
         "started_at": { "type": ["string", "null"], "format": "date-time" },
         "completed_at": { "type": ["string", "null"], "format": "date-time" }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "done" } }, "required": ["status"] },
+          "then": {
+            "required": ["findings_summary", "completed_at"],
+            "properties": {
+              "findings_summary": { "type": "string", "minLength": 1 },
+              "completed_at": { "type": "string", "minLength": 1, "format": "date-time" }
+            }
+          }
+        }
+      ]
     },
     "history": {
       "type": "array",

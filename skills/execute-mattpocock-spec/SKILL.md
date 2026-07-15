@@ -59,11 +59,11 @@ Checkpoint 位于 `.scratch/<feature>/state.json`。如果存在则读取它。
 
 ### 2. 恢复或初始化
 
-根据 `state.json` 是否存在且为有效 JSON 进行分支。
+根据 `state.json` 是否存在进行分支。存在时必须先解析 JSON，并依照同目录的权威 `state-schema.json` 验证；验证通过后才能读取 Checkpoint。
 
 #### 恢复
 
-如果 `state.json` 存在且可解析，**不要**重新判断、重新拆分或重新执行已完成的工作。从记录的状态恢复执行：
+如果 `state.json` 存在且通过 Schema 验证，**不要**重新判断、重新拆分或重新执行已完成的工作。从记录的状态恢复执行：
 
 - `status: "complete"` -> 告知用户 MattPocock Spec 已完成，显示最终评审，停止。
 - `status: "reviewing"` -> 跳到步骤 6（最终 `code-review`）。
@@ -77,7 +77,7 @@ Checkpoint 位于 `.scratch/<feature>/state.json`。如果存在则读取它。
 
 #### 初始化
 
-如果 `state.json` 不存在或无法解析，则初始化它。首先记录 **baseline**：在任何编辑之前执行 `git rev-parse HEAD`，并记录主工作树根目录 `primary_root=$(git rev-parse --show-toplevel)`。主工作树可以有未提交的其他工作：feature worktree 从 baseline commit 创建，因此不会带入这些改动，也不会要求用户 commit 或 stash。
+如果 `state.json` 不存在，则初始化它。若文件存在但 JSON 解析或 Schema 验证失败，停止并请用户修复或恢复 Checkpoint；绝不将其当作新执行初始化。初始化时，首先记录 **baseline**：在任何编辑之前执行 `git rev-parse HEAD`，并记录主工作树根目录 `primary_root=$(git rev-parse --show-toplevel)`。主工作树可以有未提交的其他工作：feature worktree 从 baseline commit 创建，因此不会带入这些改动，也不会要求用户 commit 或 stash。
 
 然后为整个 Spec 创建或复用唯一的独立 feature worktree，而不是在主工作树中 checkout feature 分支。分支名使用 `feat/{feature-slug}`；默认路径为主仓库同级的 `.worktrees/<repository-name>/<feature-slug>`。先运行 `mkdir -p "$(dirname <worktree-path>)"` 创建父目录，再使用 baseline 创建它：`git worktree add -b feat/{feature-slug} <worktree-path> <baseline>`。这会同时创建分支和 worktree，但不会改变主工作树所在的分支；后续各 Ticket 不得另建 worktree。
 
@@ -100,7 +100,7 @@ Checkpoint 位于 `.scratch/<feature>/state.json`。如果存在则读取它。
 
 ### 4. 构建执行计划
 
-- **未拆分** -> `mode: "single"`。一个 Ticket，其 `ref` 就是 MattPocock Spec 本身。
+- **未拆分** -> `mode: "single"`。一个 `id: "spec"` 的 Ticket，其 Spec 来源始终是顶层 `spec.ref`。
 - **已拆分** -> `mode: "multi"`。读取每个 Ticket 文件/Issue，解析其 **blocking edges**：`Blocked by:` 行（本地）或 `issue_dependencies_summary.blocked_by` / `Blocked by:` 正文行（GitHub）。记录每个 Ticket 的 `id`（`NN`）、`title`、`blocked_by` 列表和 `status: "pending"`。
 
 计算 **frontier 层级**（拓扑分层）：
@@ -118,7 +118,7 @@ Checkpoint 位于 `.scratch/<feature>/state.json`。如果存在则读取它。
 
 **逐层推进，层内并行，层间串行。** 对于每个 frontier 层级（`mode: "single"` 时只有一个 Level 0 层，一个 Ticket）：
 
-1. 将该层内所有 `pending` Ticket 标记为 `in_progress`，记录各自的 `start_commit` 和 `started_at`，追加 `history` 条目，写入 `state.json`。
+1. 将该层内所有 `pending` Ticket 标记为 `in_progress`，记录各自的 `start_commit` 和 `started_at`，追加 `history` 条目，写入 `state.json`。`subagent_task_id` 在分派完成前可暂缺。
 2. **同时分派**该层内每个 Ticket：分派一个子代理，子代理命名为 `"Issue Task - {ticket_title}"`，**显式指定与主代理相同的模型**（不指定时子代理可能继承不一致的默认模型）。分派后立即将 harness 返回的 `subagent_task_id` 写入该 Ticket 的 `state.json` 记录。分派方式取决于当前 harness（OpenCode 用 Task 工具，Codex/Claude Code 用 Agent 工具），并明确让子代理只在 `state.json` 记录的 feature worktree 中工作；prompt 如下：
 
 ```
@@ -141,7 +141,7 @@ ERROR: <仅 RESULT=BLOCKED 时填写>
 
 3. 为该层的所有 `subagent_task_id` 注册/保留一次原生完成结果的等待句柄，然后阻塞等待。完成通知可以乱序到达；不得轮询任务列表、任务状态或 OpenCode 会话状态。收齐该层所有终态结果后，按各自 `subagent_task_id` 处理：
    - **DONE**（测试通过，已提交）-> 对本地 Markdown Tracker，先在原始 Ticket 文件 `.scratch/<feature>/issues/<NN>-<slug>.md` 中核对验收项已满足，再将其中所有 `- [ ]` 复选框改为 `- [x]`。只有该文件已更新且不再包含未勾选复选框后，才能标记该 Ticket 为 `done`，并记录 `end_commit`（`git -C <worktree> rev-parse HEAD`）和 `completed_at`。未拆分的本地 Spec 同样处理其源 Markdown 文件；没有复选框的文件无需修改。若无法更新 Issue 文件或仍有未勾选项，则将 Ticket 标记为 `blocked` 并停止流程。真实 Tracker 不存在本地 Issue 文件时不适用此步骤。
-   - **BLOCKED**（无法完成）-> 标记该 Ticket 为 `blocked`，附带 `error` 文本。停止整个流程——不要继续到下一层级，阻塞项会阻塞其下游的所有内容。
+   - **BLOCKED**（无法完成）-> 标记该 Ticket 为 `blocked`，附带非空 `error` 文本；不得写入 `end_commit` 或 `completed_at`。停止整个流程——不要继续到下一层级，阻塞项会阻塞其下游的所有内容。
 
 4. 该层全部处理完后，写入 `state.json`（更新所有 Ticket 状态），追加 `history` 条目。如果该层有 BLOCKED 则停止；否则进入下一层级。
 
@@ -190,35 +190,16 @@ ERROR: <仅 RESULT=BLOCKED 时填写>
 
 告知用户：MattPocock Spec 已实施，commit 在 `<branch>` 分支的 `<worktree>` 中，范围从 `<baseline>` 到 `<HEAD>`，最终评审已附上。指向 `.scratch/<feature>/state.json` 以获取完整的生命周期记录。
 
-## state.json 结构
+## Checkpoint 契约
 
-Checkpoint 位于 `.scratch/<feature>/state.json`。编排器读取和写入它；权威 schema 见同目录下的 `state-schema.json`：
+Checkpoint 位于 `.scratch/<feature>/state.json`。同目录的 `state-schema.json` 是字段和局部状态约束的唯一权威来源；每次读取已有 Checkpoint 前、以及每次写入后都必须验证它。
 
-```
-{
-  "spec": { "ref": "<Issue #N | 路径>", "title": "...", "tracker": "local|github|gitlab", "feature_slug": "..." },
-  "mode": "single | multi",
-  "status": "executing | reviewing | complete",
-  "baseline": "<任何工作开始前的 commit SHA>",
-  "branch": "feat/<feature-slug>",
-  "worktree": "<feature worktree 的绝对路径>",
-  "created_at": "<ISO 8601（Asia/Shanghai）>",
-  "updated_at": "<ISO 8601（Asia/Shanghai）>",
-  "tickets": [
-    {
-      "id": "01", "title": "...", "level": 0, "blocked_by": [],
-      "status": "pending | in_progress | done | blocked",
-      "status": "pending | in_progress | done | blocked",
-      "start_commit": "<sha>", "end_commit": "<sha>",
-      "subagent_task_id": "<可选>",
-      "error": "<可选，blocked 时>",
-      "started_at": "<ISO 8601（Asia/Shanghai）>", "completed_at": "<ISO 8601（Asia/Shanghai）>"
-    }
-  ],
-  "review": { "status": "pending | in_progress | done", "fixed_point": "<sha>", "started_at": "<ISO 8601（Asia/Shanghai）>", "completed_at": "<ISO 8601（Asia/Shanghai）>" },
-  "history": [ { "ts": "<ISO 8601（Asia/Shanghai）>", "event": "init | dispatched | done | blocked | resumed | reviewing | fixing | complete", "detail": "..." } ]
-}
-```
+- Spec 来源只写在顶层 `spec.ref`；Ticket 使用唯一的 `blocked_by` 表示依赖。
+- `in_progress` Ticket 必须记录 `start_commit` 与 `started_at`；`subagent_task_id` 可暂缺。
+- `done` Ticket 必须记录 `end_commit` 与 `completed_at`。
+- `blocked` Ticket 必须记录非空 `error`，且不得有 `end_commit` 或 `completed_at`。
+- `review.status: "done"` 必须记录非空 `findings_summary` 与 `completed_at`。
+- Schema 只验证单条记录的局部事实；Ticket 汇总、状态先后与 Git 真实性由编排器验证。
 
 每次更新时写入整个文件（它很小）。绝不编辑某个字段而不更新 `updated_at`。
 
