@@ -1,5 +1,5 @@
 interface:
   display_name: "执行 MattPocock Spec"
-  short_description: "全自动执行 MattPocock Spec——按依赖顺序分派 /implement 到每个 Ticket，最后做全 Spec 的 /code-review"
+  short_description: "全自动执行 MattPocock Spec——按依赖顺序分派 implement skill 到每个 Ticket，最后做全 Spec 的 code-review"
 policy:
   allow_implicit_invocation: false

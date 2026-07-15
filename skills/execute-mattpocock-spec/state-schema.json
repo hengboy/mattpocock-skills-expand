@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mattpocock/skills/execute-mattpocock-spec/state.schema.json",
   "title": "execute-mattpocock-spec state.json",
-  "description": "/execute-mattpocock-spec 的生命周期检查点。编排器读取它以从最后一个完成的 Ticket 恢复，永不从头开始。所有时间使用 Asia/Shanghai 时区（UTC+8）。",
+  "description": "execute-mattpocock-spec skill 的生命周期检查点。编排器读取它以从最后一个完成的 Ticket 恢复，永不从头开始。所有时间使用 Asia/Shanghai 时区（UTC+8）。",
   "type": "object",
   "required": ["spec", "mode", "status", "baseline", "branch", "worktree", "created_at", "updated_at", "tickets", "review", "history"],
   "additionalProperties": false,
@@ -35,17 +35,17 @@
     "mode": {
       "type": "string",
       "enum": ["single", "multi"],
-      "description": "single = 未拆分的 MattPocock Spec（一次 /implement 运行）；multi = 由 /to-tickets 拆分（每个 Ticket 一个子代理）。"
+      "description": "single = 未拆分的 MattPocock Spec（一次 implement skill 运行）；multi = 由 to-tickets skill 拆分（每个 Ticket 一个子代理）。"
     },
     "status": {
       "type": "string",
       "enum": ["executing", "reviewing", "complete"],
-      "description": "生命周期阶段。executing -> 分派 Ticket；reviewing -> 最终 /code-review；complete -> 完成。"
+      "description": "生命周期阶段。executing -> 分派 Ticket；reviewing -> 最终 code-review；complete -> 完成。"
     },
     "baseline": {
       "type": "string",
       "pattern": "^[0-9a-f]{7,40}$",
-      "description": "在任何工作开始前记录的 commit SHA。最终的 /code-review 对 <baseline>...HEAD 做 diff。"
+      "description": "在任何工作开始前记录的 commit SHA。最终的 code-review 对 <baseline>...HEAD 做 diff。"
     },
     "branch": {
       "type": "string",
@@ -67,7 +67,7 @@
     },
     "tickets": {
       "type": "array",
-      "description": "有序列表。mode=single 时只有一个条目，其 ref 即为 MattPocock Spec 本身。mode=multi 时是 /to-tickets 的切片，按 NN 编号以 blockers-first 排序。",
+      "description": "有序列表。mode=single 时只有一个条目，其 ref 即为 MattPocock Spec 本身。mode=multi 时是 to-tickets skill 的切片，按 NN 编号以 blockers-first 排序。",
       "items": {
         "type": "object",
         "required": ["id", "title", "level", "blocked_by", "status"],
@@ -124,7 +124,7 @@
     },
     "review": {
       "type": "object",
-      "description": "最终全 MattPocock Spec /code-review 的状态。",
+      "description": "最终全 MattPocock Spec code-review 的状态。",
       "required": ["status"],
       "additionalProperties": false,
       "properties": {
