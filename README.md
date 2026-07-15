@@ -14,7 +14,7 @@
 - **已拆分**：按 frontier 层级逐层分派子代理（层内并行），每个子代理调用 `/implement` 实施对应 Ticket
 - **未拆分**：委派单个子代理执行 `/implement`
 
-主代理不直接实施任何 Ticket，全部委派给子代理。全部完成后对整个 Spec 做 `/code-review` 双轴评审。通过 `state.json` 记录全生命周期，支持断点续传。
+主代理不直接实施任何 Ticket，全部委派给子代理。执行开始时会创建绑定 `feat/{feature-slug}` 的独立 Git worktree；主工作树保持在原分支，即使有未提交改动也可继续处理其他事项。全部完成后对整个 Spec 做 `/code-review` 双轴评审。通过 `state.json` 记录全生命周期，支持断点续传。
 
 > 示例：一个 Spec 拆分成 5 个 Ticket，01 blocked_by 空，02 blocked_by 01，03/04 blocked_by 02，05 blocked_by 03/04。
 > - Level 0（01）→ 委派子代理 → 完成
@@ -58,7 +58,7 @@ ln -s $(pwd)/mattpocock-skills-expand/skills/execute-mattpocock-spec ~/.agents/s
 | 步骤 | 说明 |
 |------|------|
 | 1. 定位 Spec | 解析用户传入的 Spec 引用，读取完整内容 |
-| 2. 恢复或初始化 | 读取 `state.json` 检查点，存在则断点续传，不存在则初始化 |
+| 2. 恢复或初始化 | 读取 `state.json` 检查点；新执行创建独立 feature worktree，存在则在记录的 worktree 中断点续传 |
 | 3. 判断是否拆票 | 本地看 `issues/` 目录，GitHub 看子 Issue |
 | 4. 构建执行计划 | 解析 blocking edges，计算 frontier 层级 |
 | 5. 分派执行 | 层内并行、层间串行，主代理不直接实施，全部委派子代理 |
@@ -66,7 +66,7 @@ ln -s $(pwd)/mattpocock-skills-expand/skills/execute-mattpocock-spec ~/.agents/s
 
 ## state.json 断点续传
 
-`.scratch/<feature>/state.json` 记录完整的执行状态，中断后重新运行从最后一个检查点恢复，不重复执行已完成的 Ticket。
+`.scratch/<feature>/state.json` 记录完整的执行状态，包括 feature 分支和 worktree 的绝对路径；中断后重新运行从最后一个检查点恢复，不重复执行已完成的 Ticket。
 
 ## 文件结构
 

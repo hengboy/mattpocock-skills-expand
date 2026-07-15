@@ -4,7 +4,7 @@
   "title": "execute-mattpocock-spec state.json",
   "description": "/execute-mattpocock-spec 的生命周期检查点。编排器读取它以从最后一个完成的 Ticket 恢复，永不从头开始。所有时间使用 Asia/Shanghai 时区（UTC+8）。",
   "type": "object",
-  "required": ["spec", "mode", "status", "baseline", "branch", "created_at", "updated_at", "tickets", "review", "history"],
+  "required": ["spec", "mode", "status", "baseline", "branch", "worktree", "created_at", "updated_at", "tickets", "review", "history"],
   "additionalProperties": false,
   "properties": {
     "spec": {
@@ -49,7 +49,13 @@
     },
     "branch": {
       "type": "string",
-      "description": "所有 Ticket commit 落地的 git 分支。"
+      "description": "绑定 feature worktree 的 git 分支，所有 Ticket commit 均落地于此。"
+    },
+    "worktree": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?:/|[A-Za-z]:[\\\\/])",
+      "description": "绑定 branch 的 feature worktree 绝对路径。所有实施、测试和最终评审均在此目录中进行，主工作树不切换分支。"
     },
     "created_at": {
       "type": "string",
