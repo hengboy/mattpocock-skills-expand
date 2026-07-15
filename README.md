@@ -62,7 +62,7 @@ ln -s $(pwd)/mattpocock-skills-expand/skills/execute-mattpocock-spec ~/.agents/s
 | 3. 判断是否拆票 | 本地看 `issues/` 目录，GitHub 看子 Issue |
 | 4. 构建执行计划 | 解析 blocking edges，计算 frontier 层级 |
 | 5. 分派执行 | 层内并行、层间串行，主代理不直接实施，全部委派子代理 |
-| 6. 最终评审 | 对整个 Spec 的 diff 做 `/code-review` 双轴评审 |
+| 6. 最终评审 | 主代理直接执行 `/code-review` skill，对整个 Spec 的 diff 做双轴评审 |
 
 ## state.json 断点续传
 
