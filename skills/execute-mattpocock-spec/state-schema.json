@@ -111,7 +111,7 @@
           },
           "subagent_task_id": {
             "type": ["string", "null"],
-            "description": "子代理的 task_id，可用于恢复同一个子代理会话（opencode 的 Task 工具、Codex/Claude Code 的 Agent 工具均支持）。"
+            "description": "harness 返回的子代理任务或子会话 ID。主代理用它关联原生完成通知与终态结果；不得用它轮询状态。"
           },
           "error": {
             "type": ["string", "null"],
