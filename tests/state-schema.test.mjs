@@ -52,6 +52,7 @@ test("rejects invalid Ticket state facts", () => {
   for (const ticket of [
     { status: "pending", blocking_edges: [] },
     { status: "pending", ref: ".scratch/example/spec.md" },
+    { status: "pending", subagent_task_id: "private-to-the-completion-adapter" },
     { status: "in_progress" },
     { status: "in_progress", start_commit: "abcdef1", started_at: "" },
     { status: "done", end_commit: null, completed_at: null },

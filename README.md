@@ -14,7 +14,7 @@
 - **已拆分**：按 frontier 层级逐层分派子代理（层内并行），每个子代理加载 `implement` skill 实施对应 Ticket
 - **未拆分**：委派单个子代理执行 `implement` skill
 
-主代理不直接实施任何 Ticket，全部委派给子代理；但最终双轴 `code-review` 与用户确认的评审修复必须由主代理在 feature worktree 中完成，不创建评审或修复子代理。执行开始时会为整个 Spec 创建或复用一个绑定 `feat/{feature-slug}` 的独立 Git worktree；每个 Ticket 都使用这一 worktree，不单独创建。主工作树保持在原分支，即使有未提交改动也可继续处理其他事项。主代理通过 harness 的原生完成通知等待 Issue 实施子代理，而不是定时查询任务状态；Codex/Claude Code 使用 Agent 结果收集，OpenCode 使用 Task 结果或 headless 模式的 SSE 事件流。通过 `state.json` 记录全生命周期，支持断点续传。
+主代理不直接实施任何 Ticket，全部委派给子代理；但最终双轴 `code-review` 与用户确认的评审修复必须由主代理在 feature worktree 中完成，不创建评审或修复子代理。执行开始时会为整个 Spec 创建或复用一个绑定 `feat/{feature-slug}` 的独立 Git worktree；每个 Ticket 都使用这一 worktree，不单独创建。主工作树保持在原分支，即使有未提交改动也可继续处理其他事项。Completion Adapter 通过 harness 的原生完成通知等待整个 Frontier 的 Issue 实施子代理，而不是定时查询任务状态；Codex/Claude Code 使用 Agent 结果收集，OpenCode 使用 Task 结果或 headless 模式的 SSE 事件流。通过 `state.json` 记录全生命周期，支持断点续传。
 
 > 示例：一个 Spec 拆分成 5 个 Ticket，01 blocked_by 空，02 blocked_by 01，03/04 blocked_by 02，05 blocked_by 03/04。
 > - Level 0（01）→ 委派子代理 → 完成
@@ -74,10 +74,12 @@ mattpocock-skills-expand/
     └── execute-mattpocock-spec/
         ├── SKILL.md              # 技能定义
         ├── state-schema.json      # state.json 的 JSON Schema
+        ├── completion-result-schema.json # Completion Result 的 JSON Schema
+        ├── COMPLETION-ADAPTER.md  # Completion Adapter module
         └── agents/
             └── openai.yaml        # Codex UI 元数据
 ```
 
 ## 兼容性
 
-支持 opencode、Codex、Claude Code 等基于 Agent Skills 标准的 harness。
+Completion Adapter 支持 Codex、Claude Code 和 OpenCode；其他 harness 需要先提供具体 Adapter。

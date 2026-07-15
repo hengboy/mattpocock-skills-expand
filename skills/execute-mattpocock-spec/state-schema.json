@@ -104,10 +104,6 @@
             "pattern": "^[0-9a-f]{7,40}$",
             "description": "此 Ticket 落地后的 HEAD commit。用于验证 checkpoint 与 git 的一致性。"
           },
-          "subagent_task_id": {
-            "type": ["string", "null"],
-            "description": "harness 返回的子代理任务或子会话 ID。主代理用它关联原生完成通知与终态结果；不得用它轮询状态。"
-          },
           "error": {
             "type": ["string", "null"],
             "description": "仅 status=blocked 时的失败或阻塞文本。"
