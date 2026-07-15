@@ -124,7 +124,7 @@
     },
     "review": {
       "type": "object",
-      "description": "最终全 MattPocock Spec code-review 的状态。",
+      "description": "由主代理亲自完成、不得委派给子代理的最终全 MattPocock Spec code-review 状态。",
       "required": ["status"],
       "additionalProperties": false,
       "properties": {

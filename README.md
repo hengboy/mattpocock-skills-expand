@@ -1,12 +1,12 @@
 # mattpocock-skills-expand
 
-基于 [mattpocock/skills](https://github.com/mattpocock/skills) 扩展的技能集合。主代理不直接实施，全部委派子代理。
+基于 [mattpocock/skills](https://github.com/mattpocock/skills) 扩展的技能集合。仅 Issue 实施委派给子代理；最终评审及用户确认的修复由主代理完成。
 
 ## 技能列表
 
 | 技能 | 说明 |
 |------|------|
-| [execute-mattpocock-spec](./skills/execute-mattpocock-spec/SKILL.md) | 全自动执行 MattPocock Spec，按 frontier 层级逐层分派子代理（层内并行），最后做 `code-review` 双轴评审 |
+| [execute-mattpocock-spec](./skills/execute-mattpocock-spec/SKILL.md) | 全自动执行 MattPocock Spec，按 frontier 层级逐层分派 Issue 实施子代理（层内并行），由主代理完成最终双轴 `code-review` 和确认的修复 |
 
 ## execute-mattpocock-spec
 
@@ -14,14 +14,14 @@
 - **已拆分**：按 frontier 层级逐层分派子代理（层内并行），每个子代理加载 `implement` skill 实施对应 Ticket
 - **未拆分**：委派单个子代理执行 `implement` skill
 
-主代理不直接实施任何 Ticket，全部委派给子代理。执行开始时会为整个 Spec 创建或复用一个绑定 `feat/{feature-slug}` 的独立 Git worktree；每个 Ticket 都使用这一 worktree，不单独创建。主工作树保持在原分支，即使有未提交改动也可继续处理其他事项。主代理通过 harness 的原生完成通知等待子代理，而不是定时查询任务状态；Codex/Claude Code 使用 Agent 结果收集，OpenCode 使用 Task 结果或 headless 模式的 SSE 事件流。全部完成后对整个 Spec 做 `code-review` 双轴评审。通过 `state.json` 记录全生命周期，支持断点续传。
+主代理不直接实施任何 Ticket，全部委派给子代理；但最终双轴 `code-review` 与用户确认的评审修复必须由主代理在 feature worktree 中完成，不创建评审或修复子代理。执行开始时会为整个 Spec 创建或复用一个绑定 `feat/{feature-slug}` 的独立 Git worktree；每个 Ticket 都使用这一 worktree，不单独创建。主工作树保持在原分支，即使有未提交改动也可继续处理其他事项。主代理通过 harness 的原生完成通知等待 Issue 实施子代理，而不是定时查询任务状态；Codex/Claude Code 使用 Agent 结果收集，OpenCode 使用 Task 结果或 headless 模式的 SSE 事件流。通过 `state.json` 记录全生命周期，支持断点续传。
 
 > 示例：一个 Spec 拆分成 5 个 Ticket，01 blocked_by 空，02 blocked_by 01，03/04 blocked_by 02，05 blocked_by 03/04。
 > - Level 0（01）→ 委派子代理 → 完成
 > - Level 1（02）→ 委派子代理 → 完成
 > - Level 2（03、04）→ 同时委派两个子代理 → 全部完成
 > - Level 3（05）→ 委派子代理 → 完成
-> - 最终 `code-review` 对整个 Spec 做双轴评审
+> - 主代理对整个 Spec 做最终双轴 `code-review`；若用户确认修复项，主代理直接修复并重新评审
 
 ## 安装
 
@@ -58,7 +58,7 @@ ln -s $(pwd)/mattpocock-skills-expand/skills/execute-mattpocock-spec ~/.agents/s
 | 3. 判断是否拆票 | 本地看 `issues/` 目录，GitHub 看子 Issue |
 | 4. 构建执行计划 | 解析 blocking edges，计算 frontier 层级 |
 | 5. 分派执行 | 层内并行、层间串行；子代理终态结果会通知主代理，主代理不轮询状态 |
-| 6. 最终评审 | 主代理直接执行 `code-review` skill，对整个 Spec 的 diff 做双轴评审 |
+| 6. 最终评审与修复 | 主代理亲自完成整个 Spec 的双轴 `code-review`；用户确认的发现也由主代理直接修复并重新评审 |
 
 ## state.json 断点续传
 
