@@ -55,7 +55,7 @@
       "type": "string",
       "minLength": 1,
       "pattern": "^(?:/|[A-Za-z]:[\\\\/])",
-      "description": "绑定 branch 的 feature worktree 绝对路径。所有实施、测试和最终评审均在此目录中进行，主工作树不切换分支。"
+      "description": "当前 Spec 唯一 feature worktree 的绝对路径。不得按 Ticket 创建 worktree；所有实施、测试和最终评审均在此目录中进行，主工作树不切换分支。"
     },
     "created_at": {
       "type": "string",
