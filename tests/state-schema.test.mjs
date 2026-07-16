@@ -88,3 +88,50 @@ test("enforces completed review facts", () => {
     true,
   );
 });
+
+test("enforces resumable main integration facts", () => {
+  const base = checkpoint({ status: "pending" });
+
+  assert.equal(
+    validate({
+      ...base,
+      status: "integrating",
+      integration: { status: "pending", target_branch: "main" },
+    }),
+    true,
+    JSON.stringify(validate.errors),
+  );
+  assert.equal(
+    validate({
+      ...base,
+      integration: { status: "merged", target_branch: "main" },
+    }),
+    false,
+  );
+  assert.equal(
+    validate({
+      ...base,
+      status: "complete",
+      integration: { status: "pending", target_branch: "main" },
+    }),
+    false,
+  );
+  assert.equal(validate({ ...base, status: "complete" }), false);
+  assert.equal(
+    validate({
+      ...base,
+      status: "complete",
+      integration: {
+        status: "done",
+        target_branch: "main",
+        feature_head: "abcdef2",
+        main_worktree: "/tmp/main",
+        merged_commit: "abcdef3",
+        merged_at: "2026-07-15T13:01:00+08:00",
+        cleaned_up_at: "2026-07-15T13:02:00+08:00",
+      },
+    }),
+    true,
+    JSON.stringify(validate.errors),
+  );
+});

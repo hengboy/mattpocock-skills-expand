@@ -39,8 +39,8 @@
     },
     "status": {
       "type": "string",
-      "enum": ["executing", "reviewing", "complete"],
-      "description": "生命周期阶段。executing -> 分派 Ticket；reviewing -> 最终 code-review；complete -> 完成。"
+      "enum": ["executing", "reviewing", "integrating", "complete"],
+      "description": "生命周期阶段。executing -> 分派 Ticket；reviewing -> 最终 code-review；integrating -> 合并到 main 并清理 feature worktree；complete -> 已合并并清理完成。"
     },
     "baseline": {
       "type": "string",
@@ -185,6 +185,64 @@
         }
       ]
     },
+    "integration": {
+      "type": "object",
+      "description": "最终将 feature 分支合并到 main 并删除 feature worktree 的可恢复记录。旧版 Checkpoint 可省略；读取后由编排器补写 pending 记录。",
+      "required": ["status", "target_branch"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pending", "merged", "done"]
+        },
+        "target_branch": {
+          "const": "main"
+        },
+        "feature_head": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{7,40}$"
+        },
+        "main_worktree": {
+          "type": ["string", "null"],
+          "pattern": "^(?:/|[A-Za-z]:[\\\\/])"
+        },
+        "merged_commit": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{7,40}$"
+        },
+        "merged_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "cleaned_up_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "enum": ["merged", "done"] } }, "required": ["status"] },
+          "then": {
+            "required": ["feature_head", "main_worktree", "merged_commit", "merged_at"],
+            "properties": {
+              "feature_head": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+              "main_worktree": { "type": "string", "pattern": "^(?:/|[A-Za-z]:[\\\\/])" },
+              "merged_commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+              "merged_at": { "type": "string", "minLength": 1, "format": "date-time" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "status": { "const": "done" } }, "required": ["status"] },
+          "then": {
+            "required": ["cleaned_up_at"],
+            "properties": {
+              "cleaned_up_at": { "type": "string", "minLength": 1, "format": "date-time" }
+            }
+          }
+        }
+      ]
+    },
     "history": {
       "type": "array",
       "description": "仅追加、最新在后的生命周期事件时间线，用于审计。",
@@ -203,5 +261,23 @@
         }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "status": { "const": "complete" } },
+        "required": ["status"]
+      },
+      "then": {
+        "required": ["integration"],
+        "properties": {
+          "integration": {
+            "type": "object",
+            "properties": { "status": { "const": "done" } },
+            "required": ["status"]
+          }
+        }
+      }
+    }
+  ]
 }
