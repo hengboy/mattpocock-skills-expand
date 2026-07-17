@@ -44,6 +44,19 @@ function revisionFor(facts) {
   return createHash("sha256").update(JSON.stringify(facts)).digest("hex");
 }
 
+const DIRECT_EXECUTION_MAX_CONTENT_LENGTH = 1000;
+const DIRECT_EXECUTION_MAX_ACCEPTANCE_ITEMS = 2;
+const COMPLEX_TICKET_PATTERN = /\b(?:database|migration|schema|auth(?:entication|orization)?|security|payment|billing|deploy(?:ment)?|release|api|breaking|performance|concurren(?:cy|t)|parallel|integrat(?:e|ion)|distributed|cache)\b|数据库|数据迁移|迁移|鉴权|认证|授权|安全|支付|账单|部署|发布|接口|兼容|性能|并发|集成|分布式|缓存/i;
+
+function executionModeFor(tickets) {
+  if (tickets.length !== 1) return "delegated";
+  const [ticket] = tickets;
+  const task = `${ticket.title}\n${ticket.content}`;
+  if (ticket.content.length > DIRECT_EXECUTION_MAX_CONTENT_LENGTH) return "delegated";
+  if (ticket.acceptance.length > DIRECT_EXECUTION_MAX_ACCEPTANCE_ITEMS) return "delegated";
+  return COMPLEX_TICKET_PATTERN.test(task) ? "delegated" : "coordinator";
+}
+
 function withExecutionMode(plan) {
   if (plan.execution_mode) return plan;
   const { revision, ...facts } = plan;
@@ -51,7 +64,7 @@ function withExecutionMode(plan) {
   return { ...withMode, revision: revisionFor(withMode) };
 }
 
-export async function materializeLocalPlan({ specPath, issuesDirectory, featureSlug, executionMode = "delegated", now = new Date().toISOString() }) {
+export async function materializeLocalPlan({ specPath, issuesDirectory, featureSlug, now = new Date().toISOString() }) {
   const spec = await readFile(specPath, "utf8");
   const issueNames = await readdir(issuesDirectory).catch((error) => {
     if (error.code === "ENOENT") return [];
@@ -79,16 +92,10 @@ export async function materializeLocalPlan({ specPath, issuesDirectory, featureS
       acceptance: acceptanceFrom(spec),
       content: spec,
     }];
-  if (!["coordinator", "delegated"].includes(executionMode)) {
-    throw new Error(`Unknown execution mode: ${executionMode}`);
-  }
-  if (executionMode === "coordinator" && tickets.length !== 1) {
-    throw new Error("Coordinator execution is only available for a single Ticket Plan");
-  }
   const facts = {
     version: 1,
     created_at: now,
-    execution_mode: executionMode,
+    execution_mode: executionModeFor(tickets),
     spec: { ref: specPath, issues_directory: issuesDirectory, tracker: "local", feature_slug: featureSlug, title: titleFrom(spec, featureSlug), content: spec },
     tickets,
   };

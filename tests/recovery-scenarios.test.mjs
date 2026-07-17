@@ -179,7 +179,7 @@ test("coordinates the complete lifecycle and persists completion on main", async
   assert.deepEqual(staleMerge.diagnostics, [{ code: "merged-commit-missing", detail: "deadbeef" }]);
 });
 
-test("executes an explicitly coordinator-owned single Ticket without a Completion Adapter", async (t) => {
+test("executes an automatically coordinator-owned single Ticket without a Completion Adapter", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "spec-direct-execution-"));
   const worktreePath = `${root}-feature`;
   t.after(() => Promise.all([rm(root, { recursive: true, force: true }), rm(worktreePath, { recursive: true, force: true })]));
@@ -222,7 +222,6 @@ test("executes an explicitly coordinator-owned single Ticket without a Completio
       specPath: join(source, "spec.md"),
       issuesDirectory: join(source, "issues"),
       featureSlug: "direct-change",
-      executionMode: "coordinator",
       now: "2026-07-17T08:00:00+08:00",
     },
     review: async () => ({ approved: true, findingsSummary: "no findings" }),
@@ -234,7 +233,7 @@ test("executes an explicitly coordinator-owned single Ticket without a Completio
   assert.equal((await readFile(join(root, ".scratch", "direct-change", "plan.json"), "utf8")).includes('"execution_mode": "coordinator"'), true);
 });
 
-test("refuses coordinator execution for a multi-Ticket Plan", async (t) => {
+test("automatically delegates a multi-Ticket Plan", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "spec-multi-direct-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const source = join(root, "source");
@@ -243,15 +242,8 @@ test("refuses coordinator execution for a multi-Ticket Plan", async (t) => {
   await writeFile(join(source, "spec.md"), "# Example\n");
   await writeFile(join(issuesDirectory, "01-first.md"), "# First\n");
   await writeFile(join(issuesDirectory, "02-second.md"), "# Second\n");
-  await assert.rejects(
-    materializeLocalPlan({
-      specPath: join(source, "spec.md"),
-      issuesDirectory,
-      featureSlug: "example",
-      executionMode: "coordinator",
-    }),
-    /single Ticket Plan/,
-  );
+  const plan = await materializeLocalPlan({ specPath: join(source, "spec.md"), issuesDirectory, featureSlug: "example" });
+  assert.equal(plan.execution_mode, "delegated");
 });
 
 test("records a direct executor failure as a blocked Ticket", async (t) => {
@@ -280,7 +272,6 @@ test("records a direct executor failure as a blocked Ticket", async (t) => {
       specPath: join(source, "spec.md"),
       issuesDirectory: join(source, "issues"),
       featureSlug: "direct-failure",
-      executionMode: "coordinator",
       now: "2026-07-17T08:00:00+08:00",
     },
   });
@@ -313,7 +304,6 @@ test("requires a direct executor before starting a coordinator-owned Ticket", as
       specPath: join(source, "spec.md"),
       issuesDirectory: join(source, "issues"),
       featureSlug: "direct-preflight",
-      executionMode: "coordinator",
       now: "2026-07-17T08:00:00+08:00",
     },
   });

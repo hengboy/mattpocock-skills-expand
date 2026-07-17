@@ -29,7 +29,7 @@ test("accepts an immutable Execution Plan", () => {
   assert.equal(validatePlan({ ...plan, tickets: [] }), false);
 });
 
-test("records delegated execution mode when a non-local adapter omits it", async (t) => {
+test("records automatically selected execution mode when a non-local adapter omits it", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "execution-mode-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const specPath = join(directory, "spec.md");
@@ -40,6 +40,32 @@ test("records delegated execution mode when a non-local adapter omits it", async
   const materialized = await materialize({ tracker: "other" });
   assert.equal(materialized.execution_mode, "delegated");
   assert.equal(verifyPlan(materialized), materialized);
+});
+
+test("delegates a complex single Ticket automatically", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "execution-complexity-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const issuesDirectory = join(directory, "issues");
+  const cases = [
+    ["risk.md", "# Database migration\n- [ ] preserve data\n"],
+    ["acceptance.md", "# Example\n- [ ] first\n- [ ] second\n- [ ] third\n"],
+    ["long.md", `# Example\n${"a".repeat(1001)}`],
+  ];
+  for (const [name, content] of cases) {
+    const specPath = join(directory, name);
+    await writeFile(specPath, content);
+    const plan = await materializeLocalPlan({ specPath, issuesDirectory, featureSlug: "example" });
+    assert.equal(plan.execution_mode, "delegated", name);
+  }
+});
+
+test("uses coordinator mode at the 1000-character content limit", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "execution-content-limit-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const specPath = join(directory, "spec.md");
+  await writeFile(specPath, `# Example\n${"a".repeat(990)}`);
+  const plan = await materializeLocalPlan({ specPath, issuesDirectory: join(directory, "issues"), featureSlug: "example" });
+  assert.equal(plan.execution_mode, "coordinator");
 });
 
 test("accepts a Checkpoint that references the Execution Plan", () => {
