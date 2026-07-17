@@ -15,7 +15,7 @@ const results = await adapter.executeFrontier({ tickets, worktree });
 
 Codex/Claude 和 OpenCode 分别将自己的原生 Agent/Task capability 注入 `createCodexClaudeAdapter` 或 `createOpenCodeAdapter`。这是两个真实 adapter。没有原生 capability 时使用 `createUnsupportedAdapter(name)`，它为所有 Ticket 返回结构化 blocked 结果，绝不轮询。
 
-在下一 Frontier 前，调用方必须已完成本 Frontier 的 `executeFrontier`，因此终态任务不再占用派发容量。原生派发失败后可以先完成 collect 再重试一次；仍失败的 Ticket 保持 `in_progress`，并得到 blocked Completion Result，不能悄悄退回 `pending`。
+在下一 Frontier 前，调用方必须已完成本 Frontier 的 `executeFrontier`，因此终态任务不再占用派发容量。某个原生派发失败时，Adapter 立即收集已启动任务的终态，再重试该 Ticket 一次；仍失败的 Ticket 保持 `in_progress`，并得到 blocked Completion Result，不能悄悄退回 `pending`。
 
 ## Terminal protocol
 

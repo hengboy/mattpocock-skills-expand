@@ -105,16 +105,19 @@ test("coordinates the complete lifecycle and persists completion on main", async
     collect: async (task) => `RESULT: DONE\nCOMMITS: ${task.commit}\nTESTS: none\nSUMMARY: ${task.ticket.id}`,
   });
   const coordinator = createExecutionCoordinator({ adapter, now: () => "2026-07-17T08:00:00+08:00" });
-  const initialized = await coordinator.initialize({
+  const complete = await coordinator.run({
     repository: root,
     branch: "feat/example",
+    featureSlug: "example",
     worktreePath,
     tracker: { tracker: "local", specPath: join(source, "spec.md"), issuesDirectory: join(source, "issues"), featureSlug: "example", now: "2026-07-17T08:00:00+08:00" },
+    review: async () => ({ findingsSummary: "no findings" }),
   });
-  const executed = await coordinator.executeFrontier({ worktree: initialized.worktree, featureSlug: "example", plan: initialized.plan, checkpoint: initialized.checkpoint });
-  const reviewing = await coordinator.startReview({ worktree: initialized.worktree, featureSlug: "example", checkpoint: executed.checkpoint });
-  const integrating = await coordinator.finishReview({ worktree: initialized.worktree, featureSlug: "example", checkpoint: reviewing, findingsSummary: "no findings" });
-  const complete = await coordinator.integrate({ repository: root, worktree: initialized.worktree, featureSlug: "example", checkpoint: integrating });
   assert.equal(complete.status, "complete");
   assert.equal((await verifyCheckpointIntegrity({ worktree: root, featureSlug: "example" })).status, "valid");
+  complete.checkpoint.integration.merged_commit = "deadbeef";
+  await writeCheckpoint(root, "example", complete.checkpoint);
+  const staleMerge = await verifyCheckpointIntegrity({ worktree: root, featureSlug: "example" });
+  assert.equal(staleMerge.status, "invalid");
+  assert.deepEqual(staleMerge.diagnostics, [{ code: "merged-commit-missing", detail: "deadbeef" }]);
 });

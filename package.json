@@ -5,7 +5,7 @@
     "test": "node --test tests/*.test.mjs",
     "test:execution-state": "node --test tests/execution-state-schema.test.mjs"
   },
-  "devDependencies": {
+  "dependencies": {
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1"
   }

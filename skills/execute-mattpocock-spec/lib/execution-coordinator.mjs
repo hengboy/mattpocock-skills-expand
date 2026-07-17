@@ -2,7 +2,8 @@ import { checkpointPath, planPath } from "./paths.mjs";
 import { beginReview, blockTicket, completeIntegration, completeReview, completeTicket, createCheckpoint, markMerged, readCheckpoint, relocateCheckpoint, startTickets, writeCheckpoint } from "./checkpoint.mjs";
 import { verifyCheckpointIntegrity } from "./checkpoint-integrity.mjs";
 import { currentHead, git, gitSucceeds, isAncestor } from "./git.mjs";
-import { createTrackerMaterializer, readPlan, writePlan } from "./plan.mjs";
+import { createTrackerMaterializer, readPlan, verifyPlan, writePlan } from "./plan.mjs";
+import { assertCompletionResult } from "./validation.mjs";
 import { createFeatureWorktree, ensureFeatureWorktree, findFeatureWorktree, findMainWorktree, removeFeatureWorktree, worktreeIsClean } from "./worktree-lifecycle.mjs";
 
 async function commitFiles(worktree, files, message) {
@@ -31,8 +32,9 @@ export function createExecutionCoordinator({ adapter, materialize = createTracke
   return {
     async initialize({ repository, branch, baseline, worktreePath, tracker }) {
       baseline ??= await currentHead(repository);
-      const worktree = await createFeatureWorktree({ repository, branch, baseline, path: worktreePath });
       const plan = await materialize(tracker);
+      verifyPlan(plan);
+      const worktree = await createFeatureWorktree({ repository, branch, baseline, path: worktreePath });
       await writePlan(worktree, plan);
       const checkpoint = createCheckpoint({ plan, baseline, branch, worktree, now: now() });
       await writeCheckpoint(worktree, plan.spec.feature_slug, checkpoint);
@@ -75,6 +77,9 @@ export function createExecutionCoordinator({ adapter, materialize = createTracke
 
     async executeFrontier({ worktree, featureSlug, plan, checkpoint }) {
       if (!adapter) throw new Error("Completion Adapter is required to execute a Frontier");
+      if (checkpoint.tickets.some((ticket) => ticket.status === "blocked")) {
+        return { status: "blocked", checkpoint, results: [] };
+      }
       const unfinished = plan.tickets.filter((ticket) => checkpoint.tickets.find((state) => state.id === ticket.id)?.status !== "done");
       if (unfinished.length === 0) throw new Error("No unfinished Ticket remains");
       const activeLevel = Math.min(...unfinished.map((ticket) => ticket.level));
@@ -84,7 +89,9 @@ export function createExecutionCoordinator({ adapter, materialize = createTracke
         checkpoint = startTickets(checkpoint, pending.map((ticket) => ticket.id), await currentHead(worktree), now());
         await persistCheckpoint(worktree, featureSlug, checkpoint, `dispatch frontier ${activeLevel}`);
       }
-      const results = await adapter.executeFrontier({ tickets: frontier, worktree });
+      const rawResults = await adapter.executeFrontier({ tickets: frontier, worktree });
+      if (!Array.isArray(rawResults)) throw new Error("Completion Adapter must return an array of Completion Results");
+      const results = rawResults.map(assertCompletionResult);
       const byTicket = new Map(results.map((result) => [result.ticket_id, result]));
       for (const ticket of frontier) {
         const result = byTicket.get(ticket.id);
@@ -109,6 +116,37 @@ export function createExecutionCoordinator({ adapter, materialize = createTracke
     async finishReview({ worktree, featureSlug, checkpoint, findingsSummary }) {
       const integrating = completeReview(checkpoint, findingsSummary, now());
       return persistCheckpoint(worktree, featureSlug, integrating, "complete final review");
+    },
+
+    async run({ repository, branch, featureSlug, worktreePath, tracker, review }) {
+      let execution;
+      if (await gitSucceeds(repository, ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`])) {
+        execution = await this.resume({ repository, branch, featureSlug, worktreePath });
+      } else {
+        if (!tracker) throw new Error("Tracker input is required to initialize an execution");
+        execution = await this.initialize({ repository, branch, worktreePath, tracker });
+        execution.status = "initialized";
+      }
+      if (execution.status === "complete") return execution;
+      let { worktree, plan, checkpoint } = execution;
+      while (checkpoint.status === "executing") {
+        const result = await this.executeFrontier({ worktree, featureSlug, plan, checkpoint });
+        if (result.status === "blocked") return result;
+        checkpoint = result.checkpoint;
+        if (checkpoint.tickets.every((ticket) => ticket.status === "done")) {
+          checkpoint = await this.startReview({ worktree, featureSlug, checkpoint });
+        }
+      }
+      if (checkpoint.status === "reviewing") {
+        if (!review) return { status: "reviewing", worktree, plan, checkpoint };
+        const reviewResult = await review({ worktree, plan, checkpoint });
+        if (!reviewResult?.findingsSummary) return { status: "reviewing", worktree, plan, checkpoint };
+        checkpoint = await this.finishReview({ worktree, featureSlug, checkpoint, findingsSummary: reviewResult.findingsSummary });
+      }
+      if (checkpoint.status === "integrating") {
+        return this.integrate({ repository, worktree, featureSlug, checkpoint });
+      }
+      return { status: checkpoint.status, worktree, plan, checkpoint };
     },
 
     async integrate({ repository, worktree, featureSlug, checkpoint }) {

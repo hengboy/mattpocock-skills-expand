@@ -3,8 +3,9 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import { beginReview, completeIntegration, completeReview, completeTicket, createCheckpoint, markMerged, relocateCheckpoint, startTickets, writeCheckpoint } from "../skills/execute-mattpocock-spec/lib/checkpoint.mjs";
+import { beginReview, blockTicket, completeIntegration, completeReview, completeTicket, createCheckpoint, markMerged, relocateCheckpoint, startTickets, writeCheckpoint } from "../skills/execute-mattpocock-spec/lib/checkpoint.mjs";
 import { writePlan } from "../skills/execute-mattpocock-spec/lib/plan.mjs";
+import { createExecutionCoordinator } from "../skills/execute-mattpocock-spec/lib/execution-coordinator.mjs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -78,6 +79,23 @@ test("validates persisted Plan and Checkpoint records at runtime", async (t) => 
   await assert.rejects(writePlan(directory, { ...plan, revision: "bad" }), /Execution Plan/);
   const checkpoint = createCheckpoint({ plan, baseline: "abcdef1", branch: "feat/example", worktree: "/tmp/example", now: "2026-07-17T08:00:00+08:00" });
   await assert.rejects(writeCheckpoint(directory, "example", { ...checkpoint, version: 2 }), /Checkpoint/);
+});
+
+test("returns a structured blocked outcome without re-dispatching a blocked Ticket", async () => {
+  const base = createCheckpoint({ plan, baseline: "abcdef1", branch: "feat/example", worktree: "/tmp/example", now: "2026-07-17T08:00:00+08:00" });
+  const active = startTickets(base, ["spec"], "abcdef1", "2026-07-17T08:01:00+08:00");
+  const blocked = blockTicket(active, "spec", "test failure", "2026-07-17T08:02:00+08:00");
+  const coordinator = createExecutionCoordinator({ adapter: { executeFrontier: async () => { throw new Error("must not dispatch"); } } });
+  const result = await coordinator.executeFrontier({ worktree: "/not-used", featureSlug: "example", plan, checkpoint: blocked });
+  assert.deepEqual(result, { status: "blocked", checkpoint: blocked, results: [] });
+});
+
+test("rejects an invalid materialized Plan before creating a worktree", async () => {
+  const coordinator = createExecutionCoordinator({ materialize: async () => ({ ...plan, revision: "bad" }) });
+  await assert.rejects(
+    coordinator.initialize({ repository: "/not-used", branch: "feat/example", baseline: "abcdef1", worktreePath: "/not-used-worktree", tracker: {} }),
+    /Execution Plan/,
+  );
 });
 
 test("records Ticket transitions through the Checkpoint module", () => {

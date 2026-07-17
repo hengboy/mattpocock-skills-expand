@@ -108,3 +108,13 @@ test("collects already-started tasks before retrying a failed dispatch", async (
   assert.deepEqual(collected, ["1", "2"]);
   assert.deepEqual(results.map((result) => result.status), ["done", "done"]);
 });
+
+test("converts a synchronous collection failure into a blocked result", async () => {
+  const adapter = createNativeAdapter({
+    spawn: async () => "task",
+    collect: () => { throw new Error("collector unavailable"); },
+  });
+  const [result] = await adapter.executeFrontier({ tickets: [{ id: "1" }], worktree: "/tmp/example" });
+  assert.equal(result.status, "blocked");
+  assert.match(result.error, /collector unavailable/);
+});

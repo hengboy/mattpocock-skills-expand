@@ -28,6 +28,18 @@ export async function worktreeIsClean(worktree) {
   return (await git(worktree, ["status", "--porcelain"])) === "";
 }
 
+async function prepareNewWorktreePath(path) {
+  const target = resolve(path);
+  try {
+    await access(target);
+    throw new Error(`Worktree path already exists: ${target}`);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  await mkdir(dirname(target), { recursive: true });
+  return target;
+}
+
 export async function ensureFeatureWorktree({ repository, branch, path }) {
   const root = await repoRoot(repository);
   const existing = await findFeatureWorktree(root, branch);
@@ -35,28 +47,14 @@ export async function ensureFeatureWorktree({ repository, branch, path }) {
   if (!await gitSucceeds(root, ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`])) {
     throw new Error(`Feature branch ${branch} does not exist`);
   }
-  const target = resolve(path);
-  try {
-    await access(target);
-    throw new Error(`Worktree path already exists: ${target}`);
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
-  }
-  await mkdir(dirname(target), { recursive: true });
+  const target = await prepareNewWorktreePath(path);
   await git(root, ["worktree", "add", target, branch]);
   return { worktree: target, created: true };
 }
 
 export async function createFeatureWorktree({ repository, branch, baseline, path }) {
   const root = await repoRoot(repository);
-  const target = resolve(path);
-  try {
-    await access(target);
-    throw new Error(`Worktree path already exists: ${target}`);
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
-  }
-  await mkdir(dirname(target), { recursive: true });
+  const target = await prepareNewWorktreePath(path);
   await git(root, ["worktree", "add", "-b", branch, target, baseline]);
   return target;
 }

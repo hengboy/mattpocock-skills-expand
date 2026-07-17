@@ -39,6 +39,11 @@ export async function verifyCheckpointIntegrity({ worktree, featureSlug }) {
     } else if (!await isAncestor(worktree, checkpoint.integration.feature_head)) {
       diagnostics.push(diagnostic("feature-head-not-ancestor", checkpoint.integration.feature_head));
     }
+    if (!await gitSucceeds(worktree, ["rev-parse", "--verify", `${checkpoint.integration.merged_commit}^{commit}`])) {
+      diagnostics.push(diagnostic("merged-commit-missing", checkpoint.integration.merged_commit));
+    } else if (!await isAncestor(worktree, checkpoint.integration.merged_commit)) {
+      diagnostics.push(diagnostic("merged-commit-not-ancestor", checkpoint.integration.merged_commit));
+    }
   } else {
     if (checkpoint.worktree !== resolve(worktree)) {
       diagnostics.push(diagnostic("worktree-path", checkpoint.worktree));

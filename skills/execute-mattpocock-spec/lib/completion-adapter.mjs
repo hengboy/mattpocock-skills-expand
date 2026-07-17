@@ -33,34 +33,34 @@ export function normalizeCompletion({ ticketId, raw }) {
 export function createNativeAdapter({ spawn, collect }) {
   return {
     async executeFrontier({ tickets, worktree }) {
-      const results = new Array(tickets.length);
-      const firstAttempts = await Promise.allSettled(tickets.map((ticket) => spawn({ ticket, worktree })));
-      const started = firstAttempts.flatMap((attempt, index) => attempt.status === "fulfilled" ? [{ index, task: attempt.value }] : []);
-      await collectStarted(started, tickets, collect, results);
-      const failedIndexes = firstAttempts.flatMap((attempt, index) => attempt.status === "rejected" ? [index] : []);
-      const retries = await Promise.allSettled(failedIndexes.map((index) => spawn({ ticket: tickets[index], worktree })));
-      const retried = retries.flatMap((attempt, index) => attempt.status === "fulfilled" ? [{ index: failedIndexes[index], task: attempt.value }] : []);
-      await collectStarted(retried, tickets, collect, results);
-      for (let index = 0; index < retries.length; index += 1) {
-        if (retries[index].status === "rejected") {
-          const reason = retries[index].reason instanceof Error ? retries[index].reason.message : String(retries[index].reason);
-          results[failedIndexes[index]] = protocolError(tickets[failedIndexes[index]].id, `native dispatch failed after retry: ${reason}`);
+      const collections = new Set();
+      const collectTask = (ticket, task) => {
+        const collection = Promise.resolve()
+          .then(() => collect(task))
+          .then((raw) => normalizeCompletion({ ticketId: ticket.id, raw }))
+          .catch((error) => {
+            const reason = error instanceof Error ? error.message : String(error);
+            return protocolError(ticket.id, `native collection failed: ${reason}`);
+          });
+        collections.add(collection);
+        void collection.finally(() => collections.delete(collection));
+        return collection;
+      };
+      return Promise.all(tickets.map(async (ticket) => {
+        try {
+          return await collectTask(ticket, await spawn({ ticket, worktree }));
+        } catch (firstError) {
+          await Promise.all([...collections]);
+          try {
+            return await collectTask(ticket, await spawn({ ticket, worktree }));
+          } catch (retryError) {
+            const reason = retryError instanceof Error ? retryError.message : String(retryError);
+            return protocolError(ticket.id, `native dispatch failed after retry: ${reason}`);
+          }
         }
-      }
-      return results;
+      }));
     },
   };
-}
-
-async function collectStarted(started, tickets, collect, results) {
-  await Promise.all(started.map(async ({ index, task }) => {
-    try {
-      results[index] = normalizeCompletion({ ticketId: tickets[index].id, raw: await collect(task) });
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      results[index] = protocolError(tickets[index].id, `native collection failed: ${reason}`);
-    }
-  }));
 }
 
 export function createUnsupportedAdapter(name) {
