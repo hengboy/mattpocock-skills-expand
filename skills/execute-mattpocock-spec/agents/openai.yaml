@@ -1,5 +1,5 @@
 interface:
   display_name: "执行 MattPocock Spec"
-  short_description: "按依赖顺序分派 Issue 实施，主代理完成全 Spec 评审及确认修复"
+  short_description: "按依赖顺序分派 Issue；小型单 Issue 可由主代理实施，并完成全 Spec 评审及确认修复"
 policy:
   allow_implicit_invocation: false

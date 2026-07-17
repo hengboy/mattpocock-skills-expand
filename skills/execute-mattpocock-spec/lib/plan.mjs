@@ -44,7 +44,14 @@ function revisionFor(facts) {
   return createHash("sha256").update(JSON.stringify(facts)).digest("hex");
 }
 
-export async function materializeLocalPlan({ specPath, issuesDirectory, featureSlug, now = new Date().toISOString() }) {
+function withExecutionMode(plan) {
+  if (plan.execution_mode) return plan;
+  const { revision, ...facts } = plan;
+  const withMode = { ...facts, execution_mode: "delegated" };
+  return { ...withMode, revision: revisionFor(withMode) };
+}
+
+export async function materializeLocalPlan({ specPath, issuesDirectory, featureSlug, executionMode = "delegated", now = new Date().toISOString() }) {
   const spec = await readFile(specPath, "utf8");
   const issueNames = await readdir(issuesDirectory).catch((error) => {
     if (error.code === "ENOENT") return [];
@@ -72,9 +79,16 @@ export async function materializeLocalPlan({ specPath, issuesDirectory, featureS
       acceptance: acceptanceFrom(spec),
       content: spec,
     }];
+  if (!["coordinator", "delegated"].includes(executionMode)) {
+    throw new Error(`Unknown execution mode: ${executionMode}`);
+  }
+  if (executionMode === "coordinator" && tickets.length !== 1) {
+    throw new Error("Coordinator execution is only available for a single Ticket Plan");
+  }
   const facts = {
     version: 1,
     created_at: now,
+    execution_mode: executionMode,
     spec: { ref: specPath, issues_directory: issuesDirectory, tracker: "local", feature_slug: featureSlug, title: titleFrom(spec, featureSlug), content: spec },
     tickets,
   };
@@ -146,6 +160,9 @@ async function localTicketPath({ mainWorktree, plan, ticketId }) {
 
 export function verifyPlan(plan) {
   assertExecutionPlan(plan);
+  if (plan.execution_mode === "coordinator" && plan.tickets.length !== 1) {
+    throw new Error("Coordinator execution is only available for a single Ticket Plan");
+  }
   const { revision, ...facts } = plan;
   if (revisionFor(facts) !== revision) throw new Error("Execution Plan revision does not match its immutable facts");
   return plan;
@@ -156,6 +173,6 @@ export function createTrackerMaterializer(adapters = {}) {
     if (input.tracker === "local") return materializeLocalPlan(input);
     const adapter = adapters[input.tracker];
     if (!adapter) throw new Error(`Tracker ${input.tracker} is blocked: no materialization adapter is configured`);
-    return adapter(input);
+    return withExecutionMode(await adapter(input));
   };
 }

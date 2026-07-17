@@ -1,12 +1,11 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import test from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { beginReview, blockTicket, completeIntegration, completeReview, completeTicket, createCheckpoint, markMerged, relocateCheckpoint, startTickets, writeCheckpoint } from "../skills/execute-mattpocock-spec/lib/checkpoint.mjs";
-import { writePlan } from "../skills/execute-mattpocock-spec/lib/plan.mjs";
+import { createTrackerMaterializer, materializeLocalPlan, verifyPlan, writePlan } from "../skills/execute-mattpocock-spec/lib/plan.mjs";
 import { createExecutionCoordinator } from "../skills/execute-mattpocock-spec/lib/execution-coordinator.mjs";
-import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -28,6 +27,19 @@ const plan = {
 test("accepts an immutable Execution Plan", () => {
   assert.equal(validatePlan(plan), true, JSON.stringify(validatePlan.errors));
   assert.equal(validatePlan({ ...plan, tickets: [] }), false);
+});
+
+test("records delegated execution mode when a non-local adapter omits it", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "execution-mode-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const specPath = join(directory, "spec.md");
+  await writeFile(specPath, "# Example\n");
+  const localPlan = await materializeLocalPlan({ specPath, issuesDirectory: join(directory, "issues"), featureSlug: "example" });
+  const { execution_mode, ...legacyPlan } = localPlan;
+  const materialize = createTrackerMaterializer({ other: async () => ({ ...legacyPlan, spec: { ...legacyPlan.spec, tracker: "other" } }) });
+  const materialized = await materialize({ tracker: "other" });
+  assert.equal(materialized.execution_mode, "delegated");
+  assert.equal(verifyPlan(materialized), materialized);
 });
 
 test("accepts a Checkpoint that references the Execution Plan", () => {

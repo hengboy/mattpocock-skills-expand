@@ -178,3 +178,148 @@ test("coordinates the complete lifecycle and persists completion on main", async
   assert.equal(staleMerge.status, "invalid");
   assert.deepEqual(staleMerge.diagnostics, [{ code: "merged-commit-missing", detail: "deadbeef" }]);
 });
+
+test("executes an explicitly coordinator-owned single Ticket without a Completion Adapter", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "spec-direct-execution-"));
+  const worktreePath = `${root}-feature`;
+  t.after(() => Promise.all([rm(root, { recursive: true, force: true }), rm(worktreePath, { recursive: true, force: true })]));
+  await git(root, "init", "-b", "main");
+  await git(root, "config", "user.email", "test@example.com");
+  await git(root, "config", "user.name", "Test");
+  const source = join(root, "source");
+  await mkdir(source);
+  await writeFile(join(root, "README.md"), "base\n");
+  await writeFile(join(source, "spec.md"), "# Direct change\n- [ ] implemented\n");
+  await git(root, "add", "README.md", "source");
+  await git(root, "commit", "-m", "baseline");
+  let directExecutions = 0;
+  const coordinator = createExecutionCoordinator({
+    directExecutor: async ({ ticket, worktree, plan }) => {
+      directExecutions += 1;
+      assert.equal(ticket.id, "spec");
+      assert.equal(plan.execution_mode, "coordinator");
+      await writeFile(join(worktree, "direct.txt"), "implemented\n");
+      await git(worktree, "add", "direct.txt");
+      await git(worktree, "commit", "-m", "implement direct ticket");
+      return {
+        ticket_id: ticket.id,
+        status: "done",
+        commits: [await currentHead(worktree)],
+        tests: [],
+        summary: "implemented directly",
+      };
+    },
+    now: () => "2026-07-17T08:00:00+08:00",
+    generateCommitMessage: async () => ":memo: 记录直接实施",
+  });
+  const complete = await coordinator.run({
+    repository: root,
+    branch: "feat/direct-change",
+    featureSlug: "direct-change",
+    worktreePath,
+    tracker: {
+      tracker: "local",
+      specPath: join(source, "spec.md"),
+      issuesDirectory: join(source, "issues"),
+      featureSlug: "direct-change",
+      executionMode: "coordinator",
+      now: "2026-07-17T08:00:00+08:00",
+    },
+    review: async () => ({ approved: true, findingsSummary: "no findings" }),
+  });
+  assert.equal(complete.status, "complete");
+  assert.equal(directExecutions, 1);
+  assert.equal(complete.checkpoint.tickets[0].status, "done");
+  assert.equal(await readFile(join(source, "spec.md"), "utf8"), "# Direct change\n- [x] implemented\n");
+  assert.equal((await readFile(join(root, ".scratch", "direct-change", "plan.json"), "utf8")).includes('"execution_mode": "coordinator"'), true);
+});
+
+test("refuses coordinator execution for a multi-Ticket Plan", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "spec-multi-direct-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const source = join(root, "source");
+  const issuesDirectory = join(source, "issues");
+  await mkdir(issuesDirectory, { recursive: true });
+  await writeFile(join(source, "spec.md"), "# Example\n");
+  await writeFile(join(issuesDirectory, "01-first.md"), "# First\n");
+  await writeFile(join(issuesDirectory, "02-second.md"), "# Second\n");
+  await assert.rejects(
+    materializeLocalPlan({
+      specPath: join(source, "spec.md"),
+      issuesDirectory,
+      featureSlug: "example",
+      executionMode: "coordinator",
+    }),
+    /single Ticket Plan/,
+  );
+});
+
+test("records a direct executor failure as a blocked Ticket", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "spec-direct-failure-"));
+  const worktreePath = `${root}-feature`;
+  t.after(() => Promise.all([rm(root, { recursive: true, force: true }), rm(worktreePath, { recursive: true, force: true })]));
+  await git(root, "init", "-b", "main");
+  await git(root, "config", "user.email", "test@example.com");
+  await git(root, "config", "user.name", "Test");
+  const source = join(root, "source");
+  await mkdir(source);
+  await writeFile(join(root, "README.md"), "base\n");
+  await writeFile(join(source, "spec.md"), "# Direct failure\n");
+  await git(root, "add", "README.md", "source");
+  await git(root, "commit", "-m", "baseline");
+  const coordinator = createExecutionCoordinator({
+    directExecutor: async () => { throw new Error("test failure"); },
+    now: () => "2026-07-17T08:00:00+08:00",
+  });
+  const execution = await coordinator.initialize({
+    repository: root,
+    branch: "feat/direct-failure",
+    worktreePath,
+    tracker: {
+      tracker: "local",
+      specPath: join(source, "spec.md"),
+      issuesDirectory: join(source, "issues"),
+      featureSlug: "direct-failure",
+      executionMode: "coordinator",
+      now: "2026-07-17T08:00:00+08:00",
+    },
+  });
+  const result = await coordinator.executeFrontier({ ...execution, featureSlug: "direct-failure" });
+  assert.equal(result.results[0].status, "blocked");
+  assert.equal(result.checkpoint.tickets[0].status, "blocked");
+  assert.equal(result.checkpoint.tickets[0].error, "test failure");
+});
+
+test("requires a direct executor before starting a coordinator-owned Ticket", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "spec-direct-preflight-"));
+  const worktreePath = `${root}-feature`;
+  t.after(() => Promise.all([rm(root, { recursive: true, force: true }), rm(worktreePath, { recursive: true, force: true })]));
+  await git(root, "init", "-b", "main");
+  await git(root, "config", "user.email", "test@example.com");
+  await git(root, "config", "user.name", "Test");
+  const source = join(root, "source");
+  await mkdir(source);
+  await writeFile(join(root, "README.md"), "base\n");
+  await writeFile(join(source, "spec.md"), "# Direct preflight\n");
+  await git(root, "add", "README.md", "source");
+  await git(root, "commit", "-m", "baseline");
+  const coordinator = createExecutionCoordinator({ now: () => "2026-07-17T08:00:00+08:00" });
+  const execution = await coordinator.initialize({
+    repository: root,
+    branch: "feat/direct-preflight",
+    worktreePath,
+    tracker: {
+      tracker: "local",
+      specPath: join(source, "spec.md"),
+      issuesDirectory: join(source, "issues"),
+      featureSlug: "direct-preflight",
+      executionMode: "coordinator",
+      now: "2026-07-17T08:00:00+08:00",
+    },
+  });
+  await assert.rejects(
+    coordinator.executeFrontier({ ...execution, featureSlug: "direct-preflight" }),
+    /direct executor is required/,
+  );
+  assert.equal(execution.checkpoint.tickets[0].status, "pending");
+});

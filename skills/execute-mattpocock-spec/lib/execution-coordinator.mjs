@@ -61,7 +61,7 @@ async function assertResultCommits(worktree, result) {
   }
 }
 
-export function createExecutionCoordinator({ adapter, materialize = createTrackerMaterializer(), now = () => new Date().toISOString(), generateCommitMessage } = {}) {
+export function createExecutionCoordinator({ adapter, directExecutor, materialize = createTrackerMaterializer(), now = () => new Date().toISOString(), generateCommitMessage } = {}) {
   return {
     async initialize({ repository, branch, baseline, worktreePath, tracker }) {
       baseline ??= await currentHead(repository);
@@ -114,7 +114,6 @@ export function createExecutionCoordinator({ adapter, materialize = createTracke
     },
 
     async executeFrontier({ worktree, mainWorktree, featureSlug, plan, checkpoint }) {
-      if (!adapter) throw new Error("Completion Adapter is required to execute a Frontier");
       if (checkpoint.tickets.some((ticket) => ticket.status === "blocked")) {
         return { status: "blocked", checkpoint, results: [] };
       }
@@ -122,12 +121,34 @@ export function createExecutionCoordinator({ adapter, materialize = createTracke
       if (unfinished.length === 0) throw new Error("No unfinished Ticket remains");
       const activeLevel = Math.min(...unfinished.map((ticket) => ticket.level));
       const frontier = plan.tickets.filter((ticket) => ticket.level === activeLevel && ["pending", "in_progress"].includes(checkpoint.tickets.find((state) => state.id === ticket.id)?.status));
+      const executionMode = plan.execution_mode ?? "delegated";
+      if (executionMode === "coordinator") {
+        if (!directExecutor) throw new Error("A direct executor is required for coordinator execution");
+        if (frontier.length !== 1) throw new Error("Coordinator execution requires exactly one active Ticket");
+      }
       const pending = frontier.filter((ticket) => checkpoint.tickets.find((state) => state.id === ticket.id).status === "pending");
       if (pending.length > 0) {
         checkpoint = startTickets(checkpoint, pending.map((ticket) => ticket.id), await currentHead(worktree), now());
         await persistCheckpoint(mainWorktree, featureSlug, checkpoint);
       }
-      const rawResults = await adapter.executeFrontier({ tickets: frontier, worktree });
+      let rawResults;
+      if (executionMode === "coordinator") {
+        try {
+          rawResults = [await directExecutor({ ticket: frontier[0], worktree, plan })];
+        } catch (error) {
+          rawResults = [{
+            ticket_id: frontier[0].id,
+            status: "blocked",
+            commits: [],
+            tests: [],
+            summary: "Coordinator execution failed",
+            error: error instanceof Error ? error.message : String(error),
+          }];
+        }
+      } else {
+        if (!adapter) throw new Error("Completion Adapter is required to execute a Frontier");
+        rawResults = await adapter.executeFrontier({ tickets: frontier, worktree });
+      }
       if (!Array.isArray(rawResults)) throw new Error("Completion Adapter must return an array of Completion Results");
       const results = rawResults.map(assertCompletionResult);
       const byTicket = new Map(results.map((result) => [result.ticket_id, result]));
