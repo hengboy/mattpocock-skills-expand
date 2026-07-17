@@ -31,11 +31,22 @@
 npx skills@latest add hengboy/mattpocock-skills-expand
 ```
 
+安装器必须同时安装 `skills/execute-mattpocock-spec/package.json` 和 `package-lock.json`，然后在该目录执行：
+
+```bash
+npm ci --omit=dev
+```
+
+不要只安装 `ajv` 和 `ajv-formats`；锁文件会同时恢复 AJV 的全部传递依赖。
+
 ### 手动安装
 
 ```bash
 # 克隆到本地
 git clone git@github.com:hengboy/mattpocock-skills-expand.git
+
+# 安装 skill 的锁定运行时依赖
+(cd mattpocock-skills-expand/skills/execute-mattpocock-spec && npm ci --omit=dev)
 
 # 链接到 agents 技能目录
 ln -s $(pwd)/mattpocock-skills-expand/skills/execute-mattpocock-spec ~/.agents/skills/execute-mattpocock-spec
