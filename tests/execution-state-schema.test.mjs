@@ -85,7 +85,7 @@ test("returns a structured blocked outcome without re-dispatching a blocked Tick
   const base = createCheckpoint({ plan, baseline: "abcdef1", branch: "feat/example", worktree: "/tmp/example", now: "2026-07-17T08:00:00+08:00" });
   const active = startTickets(base, ["spec"], "abcdef1", "2026-07-17T08:01:00+08:00");
   const blocked = blockTicket(active, "spec", "test failure", "2026-07-17T08:02:00+08:00");
-  const coordinator = createExecutionCoordinator({ adapter: { executeFrontier: async () => { throw new Error("must not dispatch"); } } });
+  const coordinator = createExecutionCoordinator({ adapter: { executeFrontier: async () => { throw new Error("must not dispatch"); } }, generateCommitMessage: async () => ":memo: 记录执行结果" });
   const result = await coordinator.executeFrontier({ worktree: "/not-used", featureSlug: "example", plan, checkpoint: blocked });
   assert.deepEqual(result, { status: "blocked", checkpoint: blocked, results: [] });
 });

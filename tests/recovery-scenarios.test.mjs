@@ -98,6 +98,7 @@ test("coordinates the complete lifecycle and persists completion on main", async
   await writeFile(join(root, "README.md"), "base\n");
   await writeFile(join(source, "spec.md"), "# Example\n");
   await writeFile(join(source, "issues", "01-works.md"), "# Works\n- [ ] implemented\n");
+  await writeFile(join(source, "issues", "02-also-works.md"), "# Also works\nBlocked by: 01\n- [ ] implemented\n");
   await git(root, "add", "README.md", "source");
   await git(root, "commit", "-m", "baseline");
   const baseline = await currentHead(root);
@@ -110,19 +111,67 @@ test("coordinates the complete lifecycle and persists completion on main", async
     },
     collect: async (task) => `RESULT: DONE\nCOMMITS: ${task.commit}\nTESTS: none\nSUMMARY: ${task.ticket.id}`,
   });
-  const coordinator = createExecutionCoordinator({ adapter, now: () => "2026-07-17T08:00:00+08:00" });
-  const complete = await coordinator.run({
+  const generatedMessages = [];
+  const coordinator = createExecutionCoordinator({
+    adapter,
+    now: () => "2026-07-17T08:00:00+08:00",
+    generateCommitMessage: async ({ plan, files }) => {
+      generatedMessages.push({ title: plan.spec.title, files: [...files].sort() });
+      return ":memo: 记录 Example 的执行结果";
+    },
+  });
+  let reviewAttempts = 0;
+  const review = async () => {
+    assert.equal(await currentHead(root), baseline, "execution records must remain uncommitted until review passes");
+    assert.deepEqual(
+      [
+        ...(await gitOutput(root, "diff", "--name-only")).split("\n"),
+        ...(await gitOutput(root, "ls-files", "--others", "--exclude-standard")).split("\n"),
+      ].sort(),
+      [
+        ".scratch/example/checkpoint.json",
+        ".scratch/example/plan.json",
+        "source/issues/01-works.md",
+        "source/issues/02-also-works.md",
+      ],
+    );
+    if (reviewAttempts++ === 0) return { approved: false, findingsSummary: "finding requires a fix" };
+    return { approved: true, findingsSummary: "no findings" };
+  };
+  const reviewing = await coordinator.run({
     repository: root,
     branch: "feat/example",
     featureSlug: "example",
     worktreePath,
     tracker: { tracker: "local", specPath: join(source, "spec.md"), issuesDirectory: join(source, "issues"), featureSlug: "example", now: "2026-07-17T08:00:00+08:00" },
-    review: async () => ({ findingsSummary: "no findings" }),
+    review,
+  });
+  assert.equal(reviewing.status, "reviewing");
+  assert.equal(await currentHead(root), baseline, "a failed review must not commit execution records");
+  assert.deepEqual(generatedMessages, [], "a failed review must not generate a commit message");
+  const complete = await coordinator.run({
+    repository: root,
+    branch: "feat/example",
+    featureSlug: "example",
+    worktreePath,
+    review,
   });
   assert.equal(complete.status, "complete");
   assert.equal((await verifyCheckpointIntegrity({ worktree: root, featureSlug: "example" })).status, "valid");
   assert.equal(await readFile(join(source, "issues", "01-works.md"), "utf8"), "# Works\n- [x] implemented\n");
-  assert.deepEqual((await gitOutput(root, "diff", "--name-only", baseline, "feat/example")).split("\n"), ["01.txt"]);
+  assert.equal(await readFile(join(source, "issues", "02-also-works.md"), "utf8"), "# Also works\nBlocked by: 01\n- [x] implemented\n");
+  assert.deepEqual((await gitOutput(root, "diff", "--name-only", baseline, "feat/example")).split("\n").sort(), ["01.txt", "02.txt"]);
+  const executionCommits = (await gitOutput(root, "log", "--format=%s", `${baseline}..main`)).split("\n").filter((subject) => subject === ":memo: 记录 Example 的执行结果");
+  assert.equal(executionCommits.length, 1);
+  assert.deepEqual(generatedMessages, [{
+    title: "Example",
+    files: [
+      ".scratch/example/checkpoint.json",
+      ".scratch/example/plan.json",
+      "source/issues/01-works.md",
+      "source/issues/02-also-works.md",
+    ],
+  }]);
   complete.checkpoint.integration.merged_commit = "deadbeef";
   await writeCheckpoint(root, "example", complete.checkpoint);
   const staleMerge = await verifyCheckpointIntegrity({ worktree: root, featureSlug: "example" });

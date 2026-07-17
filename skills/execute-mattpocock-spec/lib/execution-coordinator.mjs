@@ -2,19 +2,52 @@ import { checkpointPath, planPath } from "./paths.mjs";
 import { beginReview, blockTicket, completeIntegration, completeReview, completeTicket, createCheckpoint, markMerged, readCheckpoint, relocateCheckpoint, startTickets, writeCheckpoint } from "./checkpoint.mjs";
 import { verifyCheckpointIntegrity } from "./checkpoint-integrity.mjs";
 import { currentHead, git, gitSucceeds, isAncestor } from "./git.mjs";
-import { assertLocalPlanInMainWorktree, checkLocalTicketBoxes, createTrackerMaterializer, readPlan, verifyPlan, writePlan } from "./plan.mjs";
+import { assertLocalPlanInMainWorktree, checkLocalTicketBoxes, createTrackerMaterializer, localTicketPaths, readPlan, verifyPlan, writePlan } from "./plan.mjs";
 import { assertCompletionResult } from "./validation.mjs";
 import { createFeatureWorktree, ensureFeatureWorktree, findFeatureWorktree, findMainWorktree, removeFeatureWorktree, worktreeIsClean } from "./worktree-lifecycle.mjs";
 
 async function commitFiles(worktree, files, message) {
-  await git(worktree, ["add", "--", ...files]);
-  await git(worktree, ["commit", "-m", message]);
+  const changed = new Set(await changedPaths(worktree));
+  const filesToCommit = [...new Set(files)].filter((file) => changed.has(file));
+  if (filesToCommit.length === 0) return;
+  await git(worktree, ["add", "--", ...filesToCommit]);
+  await git(worktree, ["commit", "--only", "-m", message, "--", ...filesToCommit]);
 }
 
-async function persistCheckpoint(worktree, featureSlug, checkpoint, message, files = []) {
+async function changedPaths(worktree) {
+  const outputs = await Promise.all([
+    git(worktree, ["diff", "--name-only"]),
+    git(worktree, ["diff", "--cached", "--name-only"]),
+    git(worktree, ["ls-files", "--others", "--exclude-standard"]),
+  ]);
+  return [...new Set(outputs.flatMap((output) => output ? output.split("\n") : []))];
+}
+
+async function executionRecordFiles({ mainWorktree, featureSlug, plan }) {
+  return [planPath(featureSlug), checkpointPath(featureSlug), ...await localTicketPaths({ mainWorktree, plan })];
+}
+
+async function assertOnlyExecutionRecordChanges({ mainWorktree, featureSlug, plan }) {
+  const allowed = new Set(await executionRecordFiles({ mainWorktree, featureSlug, plan }));
+  const unexpected = (await changedPaths(mainWorktree)).filter((path) => !allowed.has(path));
+  if (unexpected.length > 0) throw new Error(`Main worktree has changes outside execution records: ${unexpected.join(", ")}`);
+}
+
+async function persistCheckpoint(worktree, featureSlug, checkpoint) {
   await writeCheckpoint(worktree, featureSlug, checkpoint);
-  await commitFiles(worktree, [...files, checkpointPath(featureSlug)], message);
   return checkpoint;
+}
+
+async function commitExecutionRecords({ mainWorktree, featureSlug, plan, generateCommitMessage }) {
+  if (!generateCommitMessage) throw new Error("A git-commit message generator is required");
+  const files = await executionRecordFiles({ mainWorktree, featureSlug, plan });
+  const message = await generateCommitMessage({ mainWorktree, featureSlug, plan, files });
+  if (typeof message !== "string" || message.trim() === "") throw new Error("A non-empty execution record commit message is required");
+  await commitFiles(
+    mainWorktree,
+    files,
+    message,
+  );
 }
 
 async function assertResultCommits(worktree, result) {
@@ -28,7 +61,7 @@ async function assertResultCommits(worktree, result) {
   }
 }
 
-export function createExecutionCoordinator({ adapter, materialize = createTrackerMaterializer(), now = () => new Date().toISOString() } = {}) {
+export function createExecutionCoordinator({ adapter, materialize = createTrackerMaterializer(), now = () => new Date().toISOString(), generateCommitMessage } = {}) {
   return {
     async initialize({ repository, branch, baseline, worktreePath, tracker }) {
       baseline ??= await currentHead(repository);
@@ -41,7 +74,6 @@ export function createExecutionCoordinator({ adapter, materialize = createTracke
       await writePlan(mainWorktree, plan);
       const checkpoint = createCheckpoint({ plan, baseline, branch, worktree, now: now() });
       await writeCheckpoint(mainWorktree, plan.spec.feature_slug, checkpoint);
-      await commitFiles(mainWorktree, [planPath(plan.spec.feature_slug), checkpointPath(plan.spec.feature_slug)], "initialize execution");
       return { worktree, mainWorktree, plan, checkpoint };
     },
 
@@ -57,12 +89,12 @@ export function createExecutionCoordinator({ adapter, materialize = createTracke
             return { status: "complete", worktree: mainWorktree, ...integrity };
           }
           if (mainCheckpoint.integration.status === "merged") {
-            return this.completeMergedCleanup({ repository, mainWorktree, featureSlug, checkpoint: mainCheckpoint });
+            return this.completeMergedCleanup({ repository, mainWorktree, featureSlug, plan: await readPlan(mainWorktree, featureSlug), checkpoint: mainCheckpoint });
           }
           if (mainCheckpoint.status === "integrating" && await isAncestor(mainWorktree, branch)) {
             const merged = markMerged(mainCheckpoint, { featureHead: await git(mainWorktree, ["rev-parse", branch]), mainWorktree, mergedCommit: await currentHead(mainWorktree) }, now());
-            await persistCheckpoint(mainWorktree, featureSlug, merged, "record recovered merge");
-            return this.completeMergedCleanup({ repository, mainWorktree, featureSlug, checkpoint: merged });
+            await persistCheckpoint(mainWorktree, featureSlug, merged);
+            return this.completeMergedCleanup({ repository, mainWorktree, featureSlug, plan: await readPlan(mainWorktree, featureSlug), checkpoint: merged });
           }
         } catch (error) {
           if (!String(error.message).includes("ENOENT")) throw error;
@@ -74,7 +106,7 @@ export function createExecutionCoordinator({ adapter, materialize = createTracke
       let checkpoint = await readCheckpoint(mainWorktree, featureSlug);
       if (checkpoint.worktree !== ensured.worktree) {
         checkpoint = relocateCheckpoint(checkpoint, ensured.worktree, now());
-        await persistCheckpoint(mainWorktree, featureSlug, checkpoint, "relocate checkpoint worktree");
+        await persistCheckpoint(mainWorktree, featureSlug, checkpoint);
       }
       const integrity = await verifyCheckpointIntegrity({ worktree: mainWorktree, featureWorktree: ensured.worktree, featureSlug });
       if (integrity.status !== "valid") throw new Error(`Checkpoint integrity failed: ${JSON.stringify(integrity.diagnostics)}`);
@@ -93,7 +125,7 @@ export function createExecutionCoordinator({ adapter, materialize = createTracke
       const pending = frontier.filter((ticket) => checkpoint.tickets.find((state) => state.id === ticket.id).status === "pending");
       if (pending.length > 0) {
         checkpoint = startTickets(checkpoint, pending.map((ticket) => ticket.id), await currentHead(worktree), now());
-        await persistCheckpoint(mainWorktree, featureSlug, checkpoint, `dispatch frontier ${activeLevel}`);
+        await persistCheckpoint(mainWorktree, featureSlug, checkpoint);
       }
       const rawResults = await adapter.executeFrontier({ tickets: frontier, worktree });
       if (!Array.isArray(rawResults)) throw new Error("Completion Adapter must return an array of Completion Results");
@@ -109,22 +141,22 @@ export function createExecutionCoordinator({ adapter, materialize = createTracke
         } else {
           checkpoint = blockTicket(checkpoint, ticket.id, result.error, now());
         }
-        const issueFiles = result?.status === "done"
-          ? await checkLocalTicketBoxes({ mainWorktree, plan, ticketId: ticket.id })
-          : [];
-        await persistCheckpoint(mainWorktree, featureSlug, checkpoint, `checkpoint ${ticket.id}`, issueFiles);
+        if (result?.status === "done") {
+          await checkLocalTicketBoxes({ mainWorktree, plan, ticketId: ticket.id });
+        }
+        await persistCheckpoint(mainWorktree, featureSlug, checkpoint);
       }
       return { checkpoint, results };
     },
 
     async startReview({ mainWorktree, featureSlug, checkpoint }) {
       const reviewing = beginReview(checkpoint, now());
-      return persistCheckpoint(mainWorktree, featureSlug, reviewing, "start final review");
+      return persistCheckpoint(mainWorktree, featureSlug, reviewing);
     },
 
     async finishReview({ mainWorktree, featureSlug, checkpoint, findingsSummary }) {
       const integrating = completeReview(checkpoint, findingsSummary, now());
-      return persistCheckpoint(mainWorktree, featureSlug, integrating, "complete final review");
+      return persistCheckpoint(mainWorktree, featureSlug, integrating);
     },
 
     async run({ repository, branch, featureSlug, worktreePath, tracker, review }) {
@@ -149,20 +181,23 @@ export function createExecutionCoordinator({ adapter, materialize = createTracke
       if (checkpoint.status === "reviewing") {
         if (!review) return { status: "reviewing", worktree, plan, checkpoint };
         const reviewResult = await review({ worktree, plan, checkpoint });
-        if (!reviewResult?.findingsSummary) return { status: "reviewing", worktree, plan, checkpoint };
+        if (reviewResult?.approved !== true || !reviewResult.findingsSummary) {
+          return { status: "reviewing", worktree, plan, checkpoint };
+        }
         checkpoint = await this.finishReview({ mainWorktree, featureSlug, checkpoint, findingsSummary: reviewResult.findingsSummary });
       }
       if (checkpoint.status === "integrating") {
-        return this.integrate({ repository, worktree, featureSlug, checkpoint });
+        return this.integrate({ repository, worktree, featureSlug, plan, checkpoint });
       }
       return { status: checkpoint.status, worktree, plan, checkpoint };
     },
 
-    async integrate({ repository, worktree, featureSlug, checkpoint }) {
+    async integrate({ repository, worktree, featureSlug, plan, checkpoint }) {
       if (checkpoint.status !== "integrating") throw new Error("Checkpoint is not ready for integration");
       if (!await worktreeIsClean(worktree)) throw new Error("Feature worktree is not clean");
       const mainWorktree = await findMainWorktree(repository);
-      if (!mainWorktree || !await worktreeIsClean(mainWorktree)) throw new Error("Main worktree is unavailable or not clean");
+      if (!mainWorktree) throw new Error("Main worktree is unavailable");
+      await assertOnlyExecutionRecordChanges({ mainWorktree, featureSlug, plan });
       const featureHead = await currentHead(worktree);
       try {
         await git(mainWorktree, ["merge", "--no-edit", checkpoint.branch]);
@@ -173,15 +208,16 @@ export function createExecutionCoordinator({ adapter, materialize = createTracke
       if (!await isAncestor(mainWorktree, featureHead)) throw new Error("Merged main does not contain feature HEAD");
       const mainCheckpoint = await readCheckpoint(mainWorktree, featureSlug);
       const merged = markMerged(mainCheckpoint, { featureHead, mainWorktree, mergedCommit: await currentHead(mainWorktree) }, now());
-      await persistCheckpoint(mainWorktree, featureSlug, merged, "record merged execution");
-      return this.completeMergedCleanup({ repository, mainWorktree, featureSlug, checkpoint: merged });
+      await persistCheckpoint(mainWorktree, featureSlug, merged);
+      return this.completeMergedCleanup({ repository, mainWorktree, featureSlug, plan, checkpoint: merged });
     },
 
-    async completeMergedCleanup({ repository, mainWorktree, featureSlug, checkpoint }) {
+    async completeMergedCleanup({ repository, mainWorktree, featureSlug, plan, checkpoint }) {
       const featureWorktree = await findFeatureWorktree(repository, checkpoint.branch);
       if (featureWorktree) await removeFeatureWorktree({ repository, worktree: featureWorktree });
       const complete = completeIntegration(checkpoint, now());
-      await persistCheckpoint(mainWorktree, featureSlug, complete, "complete execution cleanup");
+      await persistCheckpoint(mainWorktree, featureSlug, complete);
+      await commitExecutionRecords({ mainWorktree, featureSlug, plan, generateCommitMessage });
       return { status: "complete", worktree: mainWorktree, checkpoint: complete };
     },
   };

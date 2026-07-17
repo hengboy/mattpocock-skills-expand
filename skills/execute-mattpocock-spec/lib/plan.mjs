@@ -112,6 +112,23 @@ export async function assertLocalPlanInMainWorktree({ mainWorktree, plan }) {
 
 export async function checkLocalTicketBoxes({ mainWorktree, plan, ticketId }) {
   if (plan.spec.tracker !== "local") return [];
+  const { issuePath, relativePath } = await localTicketPath({ mainWorktree, plan, ticketId });
+  const content = await readFile(issuePath, "utf8");
+  const updated = content.replace(/^(\s*-\s*)\[ \]/gm, "$1[x]");
+  if (updated === content) return [];
+  await writeFile(issuePath, updated);
+  return [relativePath];
+}
+
+export async function localTicketPaths({ mainWorktree, plan }) {
+  if (plan.spec.tracker !== "local") return [];
+  return Promise.all(plan.tickets.map(async ({ id: ticketId }) => {
+    const { relativePath } = await localTicketPath({ mainWorktree, plan, ticketId });
+    return relativePath;
+  }));
+}
+
+async function localTicketPath({ mainWorktree, plan, ticketId }) {
   const ticket = plan.tickets.find((candidate) => candidate.id === ticketId);
   if (!ticket) throw new Error(`Unknown Plan Ticket: ${ticketId}`);
   let issuePath;
@@ -124,12 +141,7 @@ export async function checkLocalTicketBoxes({ mainWorktree, plan, ticketId }) {
     if (!issueName) throw new Error(`Local Issue file is missing for Ticket ${ticketId}`);
     issuePath = join(plan.spec.issues_directory, issueName);
   }
-  const relativePath = await pathWithin(mainWorktree, issuePath);
-  const content = await readFile(issuePath, "utf8");
-  const updated = content.replace(/^(\s*-\s*)\[ \]/gm, "$1[x]");
-  if (updated === content) return [];
-  await writeFile(issuePath, updated);
-  return [relativePath];
+  return { issuePath, relativePath: await pathWithin(mainWorktree, issuePath) };
 }
 
 export function verifyPlan(plan) {
