@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "test": "node --test tests/*.test.mjs",
-    "test:state-schema": "node --test tests/state-schema.test.mjs"
+    "test:execution-state": "node --test tests/execution-state-schema.test.mjs"
   },
   "devDependencies": {
     "ajv": "^8.17.1",

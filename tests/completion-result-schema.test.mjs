@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
+import { createNativeAdapter, createUnsupportedAdapter, normalizeCompletion } from "../skills/execute-mattpocock-spec/lib/completion-adapter.mjs";
 
 const schema = JSON.parse(
   await readFile(
@@ -63,4 +64,47 @@ test("rejects empty completion facts", () => {
   assert.equal(validate(result({ status: "blocked", commits: [], error: "" })), false);
   assert.equal(validate(result({ summary: "" })), false);
   assert.equal(validate(result({ ticket_id: "" })), false);
+});
+
+test("normalizes the terminal protocol at the Completion Adapter seam", () => {
+  assert.deepEqual(
+    normalizeCompletion({ ticketId: "01", raw: "RESULT: DONE\nCOMMITS: abcdef1\nTESTS: npm test\nSUMMARY: done" }),
+    result({ ticket_id: "01", tests: ["npm test"], summary: "done" }),
+  );
+  assert.equal(
+    normalizeCompletion({ ticketId: "01", raw: "RESULT: DONE\nCOMMITS: none\nTESTS: none\nSUMMARY: bad" }).status,
+    "blocked",
+  );
+});
+
+test("collects every native result and blocks unsupported adapters", async () => {
+  const adapter = createNativeAdapter({
+    spawn: async ({ ticket }) => ticket.id,
+    collect: async (id) => `RESULT: DONE\nCOMMITS: abcdef${id}\nTESTS: none\nSUMMARY: ${id}`,
+  });
+  const results = await adapter.executeFrontier({ tickets: [{ id: "1" }, { id: "2" }], worktree: "/tmp/example" });
+  assert.deepEqual(results.map((item) => item.status), ["done", "done"]);
+  const unsupported = await createUnsupportedAdapter("OpenCode").executeFrontier({ tickets: [{ id: "1" }] });
+  assert.equal(unsupported[0].status, "blocked");
+});
+
+test("collects already-started tasks before retrying a failed dispatch", async () => {
+  const collected = [];
+  let failedOnce = true;
+  const adapter = createNativeAdapter({
+    spawn: async ({ ticket }) => {
+      if (ticket.id === "2" && failedOnce) {
+        failedOnce = false;
+        throw new Error("capacity");
+      }
+      return ticket.id;
+    },
+    collect: async (id) => {
+      collected.push(id);
+      return `RESULT: DONE\nCOMMITS: abcdef${id}\nTESTS: none\nSUMMARY: ${id}`;
+    },
+  });
+  const results = await adapter.executeFrontier({ tickets: [{ id: "1" }, { id: "2" }], worktree: "/tmp/example" });
+  assert.deepEqual(collected, ["1", "2"]);
+  assert.deepEqual(results.map((result) => result.status), ["done", "done"]);
 });

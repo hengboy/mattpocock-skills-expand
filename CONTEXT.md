@@ -5,8 +5,16 @@ This context describes the records and work items used to execute a MattPocock S
 ## Language
 
 **Checkpoint**:
-A persistent record of the lifecycle and recovery point for one MattPocock Spec execution. Its Spec source is `spec.ref`; it names Ticket prerequisites with `blocked_by` only. An `in_progress` Ticket has its start commit and time, a `done` Ticket has its landed commit and completion time, while a `blocked` Ticket has an error instead.
+A mutable record of the lifecycle and recovery point for one MattPocock Spec execution. It identifies one immutable Execution Plan revision and records Ticket progress, review, integration, and the Git facts that prove them.
 _Avoid_: state file, `blocking_edges`
+
+**Execution Plan**:
+An immutable, materialized snapshot of one MattPocock Spec, its Tickets, their acceptance facts, and their prerequisites. It is the input to an execution and is distinct from its Checkpoint.
+_Avoid_: spec copy, issue cache
+
+**Execution Coordinator**:
+The owner of one Spec execution that composes the Execution Plan, Checkpoint, worktree lifecycle, and Completion Adapter into one recoverable lifecycle.
+_Avoid_: orchestration script, workflow glue
 
 **Frontier**:
 The set of Tickets whose prerequisites are complete and can therefore be executed together. A Frontier completes only when every one of its Tickets has a Completion Result, even when one result is blocked.

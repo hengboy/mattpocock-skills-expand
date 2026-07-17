@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mattpocock/skills/execute-mattpocock-spec/checkpoint.schema.json",
+  "title": "execute-mattpocock-spec Checkpoint",
+  "type": "object",
+  "required": ["version", "plan", "status", "baseline", "branch", "worktree", "created_at", "updated_at", "tickets", "review", "integration", "history"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "plan": {
+      "type": "object",
+      "required": ["path", "revision"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string", "pattern": "^\\.scratch/[a-z0-9][a-z0-9-]*/plan\\.json$" },
+        "revision": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "status": { "type": "string", "enum": ["executing", "reviewing", "integrating", "complete"] },
+    "baseline": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+    "branch": { "type": "string", "minLength": 1 },
+    "worktree": { "type": "string", "pattern": "^(?:/|[A-Za-z]:[\\\\/])" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "tickets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "status": { "type": "string", "enum": ["pending", "in_progress", "done", "blocked"] },
+          "start_commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+          "end_commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+          "error": { "type": "string", "minLength": 1 },
+          "started_at": { "type": "string", "format": "date-time" },
+          "completed_at": { "type": "string", "format": "date-time" }
+        },
+        "allOf": [
+          { "if": { "properties": { "status": { "const": "in_progress" } }, "required": ["status"] }, "then": { "required": ["start_commit", "started_at"], "properties": { "start_commit": true, "started_at": true } } },
+          { "if": { "properties": { "status": { "const": "done" } }, "required": ["status"] }, "then": { "required": ["end_commit", "completed_at"], "properties": { "end_commit": true, "completed_at": true } } },
+          { "if": { "properties": { "status": { "const": "blocked" } }, "required": ["status"] }, "then": { "required": ["error"], "properties": { "error": true, "end_commit": true, "completed_at": true }, "not": { "anyOf": [{ "required": ["end_commit"] }, { "required": ["completed_at"] }] } } }
+        ]
+      }
+    },
+    "review": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": { "status": { "type": "string", "enum": ["pending", "in_progress", "done"] }, "findings_summary": { "type": "string", "minLength": 1 }, "started_at": { "type": "string", "format": "date-time" }, "completed_at": { "type": "string", "format": "date-time" } },
+      "allOf": [
+        { "if": { "properties": { "status": { "const": "done" } }, "required": ["status"] }, "then": { "required": ["findings_summary", "completed_at"], "properties": { "findings_summary": true, "completed_at": true } } }
+      ]
+    },
+    "integration": {
+      "type": "object",
+      "required": ["status", "target_branch"],
+      "additionalProperties": false,
+      "properties": { "status": { "type": "string", "enum": ["pending", "merged", "done"] }, "target_branch": { "const": "main" }, "feature_head": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" }, "main_worktree": { "type": "string" }, "merged_commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" }, "merged_at": { "type": "string", "format": "date-time" }, "cleaned_up_at": { "type": "string", "format": "date-time" } },
+      "allOf": [
+        { "if": { "properties": { "status": { "const": "merged" } }, "required": ["status"] }, "then": { "required": ["feature_head", "main_worktree", "merged_commit", "merged_at"], "properties": { "feature_head": true, "main_worktree": true, "merged_commit": true, "merged_at": true } } },
+        { "if": { "properties": { "status": { "const": "done" } }, "required": ["status"] }, "then": { "required": ["feature_head", "main_worktree", "merged_commit", "merged_at", "cleaned_up_at"], "properties": { "feature_head": true, "main_worktree": true, "merged_commit": true, "merged_at": true, "cleaned_up_at": true } } }
+      ]
+    },
+    "history": { "type": "array", "items": { "type": "object", "required": ["event", "detail", "at"], "additionalProperties": false, "properties": { "event": { "type": "string", "minLength": 1 }, "detail": { "type": "string", "minLength": 1 }, "at": { "type": "string", "format": "date-time" } } } }
+  },
+  "allOf": [
+    { "if": { "properties": { "status": { "const": "complete" } }, "required": ["status"] }, "then": { "properties": { "integration": { "type": "object", "properties": { "status": { "const": "done" } }, "required": ["status"] } } } }
+  ]
+}

@@ -14,7 +14,7 @@
 - **已拆分**：按 frontier 层级逐层分派子代理（层内并行），每个子代理加载 `implement` skill 实施对应 Ticket
 - **未拆分**：委派单个子代理执行 `implement` skill
 
-主代理不直接实施任何 Ticket，全部委派给子代理；但最终双轴 `code-review` 与用户确认的评审修复必须由主代理在 feature worktree 中完成，不创建评审或修复子代理。执行开始时会为整个 Spec 创建或复用一个绑定 `feat/{feature-slug}` 的独立 Git worktree；每个 Ticket 都使用这一 worktree，不单独创建。主工作树保持在原分支，即使有未提交改动也可继续处理其他事项。Completion Adapter 通过 harness 的原生完成通知等待整个 Frontier 的 Issue 实施子代理，而不是定时查询任务状态；Codex/Claude Code 使用 Agent 结果收集，OpenCode 使用 Task 结果或 headless 模式的 SSE 事件流。每个已完成的本地 Issue 都会在其代码提交后紧随一个 checkpoint commit：该提交同时包含勾选后的 Issue 文件与 `state.json`，使 feature worktree 始终干净、可恢复。每个 Frontier 的进度只作为中间更新：主协调会话在收齐该层终态后立即派发下一层，不要求用户“继续”，也不会重启独立的 Codex 执行。通过 `state.json` 记录全生命周期，支持断点续传。
+主代理不直接实施任何 Ticket，全部委派给子代理；但最终双轴 `code-review` 与用户确认的评审修复必须由主代理在 feature worktree 中完成。每个 Spec 只有一个 `feat/{feature-slug}` worktree。Execution Coordinator 将不可变 `plan.json`、可变 `checkpoint.json`、worktree 生命周期和 Completion Adapter 串成可恢复流程；成功整合后最终 Checkpoint 提交在 `main`，因此删除 feature worktree 不会丢失完成记录。Completion Adapter 注入 Codex/Claude 或 OpenCode 的原生 spawn/collect capability，统一返回 Completion Result；没有 capability 时返回结构化 blocked 结果。
 
 > 示例：一个 Spec 拆分成 5 个 Ticket，01 blocked_by 空，02 blocked_by 01，03/04 blocked_by 02，05 blocked_by 03/04。
 > - Level 0（01）→ 委派子代理 → 完成
@@ -54,15 +54,15 @@ ln -s $(pwd)/mattpocock-skills-expand/skills/execute-mattpocock-spec ~/.agents/s
 | 步骤 | 说明 |
 |------|------|
 | 1. 定位 Spec | 解析用户传入的 Spec 引用，读取完整内容 |
-| 2. 恢复或初始化 | 读取 `state.json` 检查点；新执行创建独立 feature worktree，存在则在记录的 worktree 中断点续传 |
-| 3. 判断是否拆票 | 本地看 `issues/` 目录，GitHub 看子 Issue |
-| 4. 构建执行计划 | 解析 blocking edges，计算 frontier 层级 |
+| 2. 恢复或初始化 | 物化 `plan.json` 与 `checkpoint.json`；新执行创建独立 feature worktree，恢复时自动重建丢失的 feature worktree |
+| 3. 物化执行计划 | 本地 Markdown Tracker 写入不可变 Plan；远程 Tracker 需注入 adapter，否则明确 blocked |
+| 4. 构建执行计划 | Plan 解析 `blocked_by` 并计算 frontier 层级 |
 | 5. 分派执行 | 层内并行、层间串行；子代理终态结果会通知主代理，主代理不轮询状态 |
 | 6. 最终评审与修复 | 主代理亲自完成整个 Spec 的双轴 `code-review`；用户确认的发现也由主代理直接修复并重新评审 |
 
-## state.json 断点续传
+## Execution Plan 与 Checkpoint
 
-`.scratch/<feature>/state.json` 记录完整的执行状态，包括 feature 分支和 worktree 的绝对路径；中断后重新运行从最后一个检查点恢复，不重复执行已完成的 Ticket。
+`.scratch/<feature>/plan.json` 是不可变的 Spec/Ticket 快照，`.scratch/<feature>/checkpoint.json` 只记录执行生命周期。恢复模块验证 Plan revision、baseline 与 Ticket commits 均为 feature `HEAD` 的祖先；合并后同一 Checkpoint 在 `main` 记录 `merged` / `complete`，恢复优先读取该记录。旧 `state.json` 不兼容且不迁移。
 
 ## 文件结构
 
@@ -73,9 +73,11 @@ mattpocock-skills-expand/
 └── skills/
     └── execute-mattpocock-spec/
         ├── SKILL.md              # 技能定义
-        ├── state-schema.json      # state.json 的 JSON Schema
+        ├── execution-plan-schema.json # 不可变 Plan 的 JSON Schema
+        ├── checkpoint-schema.json # 可变 Checkpoint 的 JSON Schema
         ├── completion-result-schema.json # Completion Result 的 JSON Schema
         ├── COMPLETION-ADAPTER.md  # Completion Adapter module
+        ├── lib/                   # 可执行的生命周期 modules
         └── agents/
             └── openai.yaml        # Codex UI 元数据
 ```
