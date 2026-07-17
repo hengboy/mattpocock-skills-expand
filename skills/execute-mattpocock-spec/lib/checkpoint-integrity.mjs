@@ -8,7 +8,7 @@ function diagnostic(code, detail) {
   return { code, detail };
 }
 
-export async function verifyCheckpointIntegrity({ worktree, featureSlug }) {
+export async function verifyCheckpointIntegrity({ worktree, featureWorktree, featureSlug }) {
   const diagnostics = [];
   let plan;
   let checkpoint;
@@ -29,11 +29,11 @@ export async function verifyCheckpointIntegrity({ worktree, featureSlug }) {
     diagnostics.push(diagnostic("plan-path", checkpoint.plan.path));
   }
   const currentBranch = await git(worktree, ["branch", "--show-current"]);
+  if (currentBranch !== checkpoint.integration.target_branch) {
+    diagnostics.push(diagnostic("records-branch", currentBranch));
+  }
   const integrationRecord = ["merged", "done"].includes(checkpoint.integration.status);
   if (integrationRecord) {
-    if (currentBranch !== checkpoint.integration.target_branch) {
-      diagnostics.push(diagnostic("integration-branch", currentBranch));
-    }
     if (!await gitSucceeds(worktree, ["rev-parse", "--verify", `${checkpoint.integration.feature_head}^{commit}`])) {
       diagnostics.push(diagnostic("feature-head-missing", checkpoint.integration.feature_head));
     } else if (!await isAncestor(worktree, checkpoint.integration.feature_head)) {
@@ -45,11 +45,13 @@ export async function verifyCheckpointIntegrity({ worktree, featureSlug }) {
       diagnostics.push(diagnostic("merged-commit-not-ancestor", checkpoint.integration.merged_commit));
     }
   } else {
-    if (checkpoint.worktree !== resolve(worktree)) {
+    if (!featureWorktree) {
+      diagnostics.push(diagnostic("feature-worktree", "required before integration"));
+    } else if (checkpoint.worktree !== resolve(featureWorktree)) {
       diagnostics.push(diagnostic("worktree-path", checkpoint.worktree));
     }
-    if (currentBranch !== checkpoint.branch) {
-      diagnostics.push(diagnostic("branch", checkpoint.branch));
+    if (featureWorktree && await git(featureWorktree, ["branch", "--show-current"]) !== checkpoint.branch) {
+      diagnostics.push(diagnostic("feature-branch", checkpoint.branch));
     }
   }
   if (!await gitSucceeds(worktree, ["rev-parse", "--verify", `${checkpoint.baseline}^{commit}`])) {
@@ -68,9 +70,10 @@ export async function verifyCheckpointIntegrity({ worktree, featureSlug }) {
       if (ticket.status === "done" || ticket.status === "in_progress") diagnostics.push(diagnostic("ticket-commit-missing", ticket.id));
       continue;
     }
-    if (!await gitSucceeds(worktree, ["rev-parse", "--verify", `${commit}^{commit}`])) {
+    const commitWorktree = featureWorktree || worktree;
+    if (!await gitSucceeds(commitWorktree, ["rev-parse", "--verify", `${commit}^{commit}`])) {
       diagnostics.push(diagnostic("ticket-commit-missing", `${ticket.id}:${commit}`));
-    } else if (!await isAncestor(worktree, commit)) {
+    } else if (!await isAncestor(commitWorktree, commit)) {
       diagnostics.push(diagnostic("ticket-commit-not-ancestor", `${ticket.id}:${commit}`));
     }
   }

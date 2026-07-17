@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { mkdir, readFile, readdir, realpath, writeFile } from "node:fs/promises";
+import { basename, isAbsolute, join, relative } from "node:path";
 import { planPath } from "./paths.mjs";
 import { assertExecutionPlan } from "./validation.mjs";
 
@@ -62,7 +62,7 @@ export async function materializeLocalPlan({ specPath, issuesDirectory, featureS
       content,
     };
   }));
-  const tickets = issueTickets.length >= 2
+  const tickets = issueTickets.length >= 1
     ? levelsFor(issueTickets)
     : [{
       id: "spec",
@@ -75,7 +75,7 @@ export async function materializeLocalPlan({ specPath, issuesDirectory, featureS
   const facts = {
     version: 1,
     created_at: now,
-    spec: { ref: specPath, tracker: "local", feature_slug: featureSlug, title: titleFrom(spec, featureSlug), content: spec },
+    spec: { ref: specPath, issues_directory: issuesDirectory, tracker: "local", feature_slug: featureSlug, title: titleFrom(spec, featureSlug), content: spec },
     tickets,
   };
   return { ...facts, revision: revisionFor(facts) };
@@ -91,6 +91,45 @@ export async function writePlan(worktree, plan) {
 
 export async function readPlan(worktree, featureSlug) {
   return verifyPlan(JSON.parse(await readFile(join(worktree, planPath(featureSlug)), "utf8")));
+}
+
+async function pathWithin(worktree, path) {
+  const relativePath = relative(await realpath(worktree), await realpath(path));
+  if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
+    throw new Error(`Local tracker file must be inside the main worktree: ${path}`);
+  }
+  return relativePath;
+}
+
+export async function assertLocalPlanInMainWorktree({ mainWorktree, plan }) {
+  if (plan.spec.tracker !== "local") return;
+  await pathWithin(mainWorktree, plan.spec.ref);
+  if (plan.tickets.some((ticket) => ticket.id !== "spec")) {
+    if (!plan.spec.issues_directory) throw new Error("Local Execution Plan does not identify its issues directory");
+    await pathWithin(mainWorktree, plan.spec.issues_directory);
+  }
+}
+
+export async function checkLocalTicketBoxes({ mainWorktree, plan, ticketId }) {
+  if (plan.spec.tracker !== "local") return [];
+  const ticket = plan.tickets.find((candidate) => candidate.id === ticketId);
+  if (!ticket) throw new Error(`Unknown Plan Ticket: ${ticketId}`);
+  let issuePath;
+  if (ticketId === "spec") {
+    issuePath = plan.spec.ref;
+  } else {
+    if (!plan.spec.issues_directory) throw new Error("Local Execution Plan does not identify its issues directory");
+    const issueNames = await readdir(plan.spec.issues_directory);
+    const issueName = issueNames.find((name) => name.match(new RegExp(`^${ticketId.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}-.*\\.md$`)));
+    if (!issueName) throw new Error(`Local Issue file is missing for Ticket ${ticketId}`);
+    issuePath = join(plan.spec.issues_directory, issueName);
+  }
+  const relativePath = await pathWithin(mainWorktree, issuePath);
+  const content = await readFile(issuePath, "utf8");
+  const updated = content.replace(/^(\s*-\s*)\[ \]/gm, "$1[x]");
+  if (updated === content) return [];
+  await writeFile(issuePath, updated);
+  return [relativePath];
 }
 
 export function verifyPlan(plan) {

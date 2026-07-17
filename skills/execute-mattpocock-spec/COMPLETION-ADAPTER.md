@@ -39,4 +39,4 @@ ERROR: <仅 RESULT=BLOCKED 时填写，且非空>
 
 ## 子代理约束
 
-每个 Ticket 子代理名为 `Issue Task - {ticket_title}`，显式使用与主代理相同的模型，并加载 `implement` skill。它只可在记录的 feature worktree 编辑、测试和提交代码；不得创建 branch、worktree 或 PR，也不得改写 `plan.json` 或 `checkpoint.json`。主协调器在代码提交后记录 Checkpoint。
+每个 Ticket 子代理名为 `Issue Task - {ticket_title}`，显式使用与主代理相同的模型，并加载 `implement` skill。它只可在记录的 feature worktree 编辑、测试和提交实现代码；不得创建 branch、worktree 或 PR，也不得改写 Issue、`plan.json` 或 `checkpoint.json`。主协调器在主仓库勾选 Issue 复选框并记录 Checkpoint。

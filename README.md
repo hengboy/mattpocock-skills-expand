@@ -14,7 +14,7 @@
 - **已拆分**：按 frontier 层级逐层分派子代理（层内并行），每个子代理加载 `implement` skill 实施对应 Ticket
 - **未拆分**：委派单个子代理执行 `implement` skill
 
-主代理不直接实施任何 Ticket，全部委派给子代理；但最终双轴 `code-review` 与用户确认的评审修复必须由主代理在 feature worktree 中完成。每个 Spec 只有一个 `feat/{feature-slug}` worktree。Execution Coordinator 将不可变 `plan.json`、可变 `checkpoint.json`、worktree 生命周期和 Completion Adapter 串成可恢复流程；成功整合后最终 Checkpoint 提交在 `main`，因此删除 feature worktree 不会丢失完成记录。Completion Adapter 注入 Codex/Claude 或 OpenCode 的原生 spawn/collect capability，统一返回 Completion Result；没有 capability 时返回结构化 blocked 结果。
+主代理不直接实施任何 Ticket，全部委派给子代理；但最终双轴 `code-review` 与用户确认的评审修复必须由主代理在 feature worktree 中完成。每个 Spec 只有一个 `feat/{feature-slug}` worktree，且它只承载实现代码。主代理在 `main` 更新并提交 Issue 复选框、不可变 `plan.json` 和可变 `checkpoint.json`。Execution Coordinator 将这些主仓库记录、worktree 生命周期和 Completion Adapter 串成可恢复流程。Completion Adapter 注入 Codex/Claude 或 OpenCode 的原生 spawn/collect capability，统一返回 Completion Result；没有 capability 时返回结构化 blocked 结果。
 
 > 示例：一个 Spec 拆分成 5 个 Ticket，01 blocked_by 空，02 blocked_by 01，03/04 blocked_by 02，05 blocked_by 03/04。
 > - Level 0（01）→ 委派子代理 → 完成
@@ -62,7 +62,7 @@ ln -s $(pwd)/mattpocock-skills-expand/skills/execute-mattpocock-spec ~/.agents/s
 
 ## Execution Plan 与 Checkpoint
 
-`.scratch/<feature>/plan.json` 是不可变的 Spec/Ticket 快照，`.scratch/<feature>/checkpoint.json` 只记录执行生命周期。恢复模块验证 Plan revision、baseline 与 Ticket commits 均为 feature `HEAD` 的祖先；合并后同一 Checkpoint 在 `main` 记录 `merged` / `complete`，恢复优先读取该记录。旧 `state.json` 不兼容且不迁移。
+主仓库中的 `.scratch/<feature>/plan.json` 是不可变的 Spec/Ticket 快照，`.scratch/<feature>/checkpoint.json` 只记录执行生命周期。主代理在每个 Ticket 完成后，在主仓库勾选对应本地 Issue 复选框并提交 Checkpoint；恢复模块从 main 读取记录、在 feature `HEAD` 验证 Ticket commits。旧 `state.json` 不兼容且不迁移。
 
 ## 文件结构
 
