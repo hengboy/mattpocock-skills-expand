@@ -27,10 +27,35 @@ async function executionRecordFiles({ mainWorktree, featureSlug, plan }) {
   return [planPath(featureSlug), checkpointPath(featureSlug), ...await localTicketPaths({ mainWorktree, plan })];
 }
 
-async function assertOnlyExecutionRecordChanges({ mainWorktree, featureSlug, plan }) {
+async function unexpectedMainWorktreeChanges({ mainWorktree, featureSlug, plan }) {
   const allowed = new Set(await executionRecordFiles({ mainWorktree, featureSlug, plan }));
-  const unexpected = (await changedPaths(mainWorktree)).filter((path) => !allowed.has(path));
-  if (unexpected.length > 0) throw new Error(`Main worktree has changes outside execution records: ${unexpected.join(", ")}`);
+  return (await changedPaths(mainWorktree)).filter((path) => !allowed.has(path));
+}
+
+async function stashChanges(worktree, paths, featureSlug) {
+  if (paths.length === 0) return null;
+  const previous = await gitSucceeds(worktree, ["rev-parse", "--verify", "refs/stash"])
+    ? await git(worktree, ["rev-parse", "refs/stash"])
+    : null;
+  await git(worktree, ["stash", "push", "--include-untracked", "--message", `execute-mattpocock-spec:${featureSlug}`, "--", ...paths]);
+  const reference = await gitSucceeds(worktree, ["rev-parse", "--verify", "refs/stash"])
+    ? await git(worktree, ["rev-parse", "refs/stash"])
+    : null;
+  if (!reference || reference === previous) return null;
+  return reference;
+}
+
+async function restoreStashedChanges(worktree, reference) {
+  if (!reference) return;
+  try {
+    await git(worktree, ["stash", "apply", "--index", reference]);
+  } catch (error) {
+    throw new Error(`Could not restore unrelated main worktree changes from stash ${reference}; resolve them manually`, { cause: error });
+  }
+  if (await git(worktree, ["rev-parse", "refs/stash"]) !== reference) {
+    throw new Error(`Could not remove restored stash ${reference}; it is no longer the top stash`);
+  }
+  await git(worktree, ["stash", "drop", "stash@{0}"]);
 }
 
 async function persistCheckpoint(worktree, featureSlug, checkpoint) {
@@ -218,19 +243,34 @@ export function createExecutionCoordinator({ adapter, directExecutor, materializ
       if (!await worktreeIsClean(worktree)) throw new Error("Feature worktree is not clean");
       const mainWorktree = await findMainWorktree(repository);
       if (!mainWorktree) throw new Error("Main worktree is unavailable");
-      await assertOnlyExecutionRecordChanges({ mainWorktree, featureSlug, plan });
-      const featureHead = await currentHead(worktree);
+      const stash = await stashChanges(
+        mainWorktree,
+        await unexpectedMainWorktreeChanges({ mainWorktree, featureSlug, plan }),
+        featureSlug,
+      );
+      let stashRestoreAttempted = false;
       try {
+        const featureHead = await currentHead(worktree);
         await git(mainWorktree, ["merge", "--no-edit", checkpoint.branch]);
+        if (!await isAncestor(mainWorktree, featureHead)) throw new Error("Merged main does not contain feature HEAD");
+        const mainCheckpoint = await readCheckpoint(mainWorktree, featureSlug);
+        const merged = markMerged(mainCheckpoint, { featureHead, mainWorktree, mergedCommit: await currentHead(mainWorktree) }, now());
+        await persistCheckpoint(mainWorktree, featureSlug, merged);
+        const complete = await this.completeMergedCleanup({ repository, mainWorktree, featureSlug, plan, checkpoint: merged });
+        await git(mainWorktree, ["reset"]);
+        stashRestoreAttempted = true;
+        await restoreStashedChanges(mainWorktree, stash);
+        return complete;
       } catch (error) {
         await gitSucceeds(mainWorktree, ["merge", "--abort"]);
+        if (stashRestoreAttempted) throw error;
+        try {
+          await restoreStashedChanges(mainWorktree, stash);
+        } catch (restoreError) {
+          throw new Error(`${error.message}; ${restoreError.message}`, { cause: restoreError });
+        }
         throw error;
       }
-      if (!await isAncestor(mainWorktree, featureHead)) throw new Error("Merged main does not contain feature HEAD");
-      const mainCheckpoint = await readCheckpoint(mainWorktree, featureSlug);
-      const merged = markMerged(mainCheckpoint, { featureHead, mainWorktree, mergedCommit: await currentHead(mainWorktree) }, now());
-      await persistCheckpoint(mainWorktree, featureSlug, merged);
-      return this.completeMergedCleanup({ repository, mainWorktree, featureSlug, plan, checkpoint: merged });
     },
 
     async completeMergedCleanup({ repository, mainWorktree, featureSlug, plan, checkpoint }) {

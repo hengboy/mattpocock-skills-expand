@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
-import { createCheckpoint, writeCheckpoint } from "../skills/execute-mattpocock-spec/lib/checkpoint.mjs";
+import { createCheckpoint, readCheckpoint, writeCheckpoint } from "../skills/execute-mattpocock-spec/lib/checkpoint.mjs";
 import { verifyCheckpointIntegrity } from "../skills/execute-mattpocock-spec/lib/checkpoint-integrity.mjs";
 import { createNativeAdapter } from "../skills/execute-mattpocock-spec/lib/completion-adapter.mjs";
 import { createExecutionCoordinator } from "../skills/execute-mattpocock-spec/lib/execution-coordinator.mjs";
@@ -59,6 +59,117 @@ test("recovers a missing feature worktree from its committed Plan and Checkpoint
   const restored = await ensureFeatureWorktree({ repository: root, branch: "feat/example", path: worktree });
   assert.equal(restored.created, true);
   assert.equal((await verifyCheckpointIntegrity({ worktree: root, featureWorktree: restored.worktree, featureSlug: "example" })).status, "valid");
+});
+
+test("commits execution records while restoring unrelated main worktree changes", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "spec-main-changes-"));
+  const worktreePath = `${root}-feature`;
+  t.after(() => Promise.all([rm(root, { recursive: true, force: true }), rm(worktreePath, { recursive: true, force: true })]));
+  await git(root, "init", "-b", "main");
+  await git(root, "config", "user.email", "test@example.com");
+  await git(root, "config", "user.name", "Test");
+  const source = join(root, "source");
+  await mkdir(join(source, "issues"), { recursive: true });
+  await writeFile(join(root, "README.md"), "base\n");
+  await writeFile(join(source, "spec.md"), "# Example\n");
+  await writeFile(join(source, "issues", "01-works.md"), "# Integration work\n- [ ] implemented\n");
+  await git(root, "add", "README.md", "source");
+  await git(root, "commit", "-m", "baseline");
+
+  const adapter = createNativeAdapter({
+    spawn: async ({ ticket, worktree }) => {
+      await writeFile(join(worktree, `${ticket.id}.txt`), "implemented\n");
+      await git(worktree, "add", `${ticket.id}.txt`);
+      await git(worktree, "commit", "-m", `implement ${ticket.id}`);
+      return { ticket, worktree, commit: await currentHead(worktree) };
+    },
+    collect: async (task) => `RESULT: DONE\nCOMMITS: ${task.commit}\nTESTS: none\nSUMMARY: ${task.ticket.id}`,
+  });
+  const coordinator = createExecutionCoordinator({
+    adapter,
+    now: () => "2026-07-17T08:00:00+08:00",
+    generateCommitMessage: async () => ":memo: 记录 Example 的执行结果",
+  });
+  await coordinator.initialize({
+    repository: root,
+    branch: "feat/example",
+    worktreePath,
+    tracker: { tracker: "local", specPath: join(source, "spec.md"), issuesDirectory: join(source, "issues"), featureSlug: "example", now: "2026-07-17T08:00:00+08:00" },
+  });
+  await writeFile(join(root, "README.md"), "uncommitted\n");
+  await writeFile(join(root, "staged.md"), "staged\n");
+  await git(root, "add", "staged.md");
+  await writeFile(join(root, "notes.md"), "untracked\n");
+
+  const complete = await coordinator.run({
+    repository: root,
+    branch: "feat/example",
+    featureSlug: "example",
+    worktreePath,
+    review: async () => ({ approved: true, findingsSummary: "no findings" }),
+  });
+
+  assert.equal(complete.status, "complete");
+  assert.equal(await readFile(join(root, "README.md"), "utf8"), "uncommitted\n");
+  assert.equal(await readFile(join(root, "staged.md"), "utf8"), "staged\n");
+  assert.equal(await readFile(join(root, "notes.md"), "utf8"), "untracked\n");
+  assert.equal(await gitOutput(root, "diff", "--name-only"), "README.md");
+  assert.equal(await gitOutput(root, "diff", "--cached", "--name-only"), "staged.md");
+  assert.equal((await gitOutput(root, "status", "--porcelain")).includes("?? notes.md"), true);
+  assert.equal(await gitOutput(root, "stash", "list"), "");
+  assert.equal((await gitOutput(root, "show", "--name-only", "--format=", "HEAD")).includes(".scratch/example/checkpoint.json"), true);
+});
+
+test("retains the stash when restoring a main change conflicts with merged code", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "spec-stash-conflict-"));
+  const worktreePath = `${root}-feature`;
+  t.after(() => Promise.all([rm(root, { recursive: true, force: true }), rm(worktreePath, { recursive: true, force: true })]));
+  await git(root, "init", "-b", "main");
+  await git(root, "config", "user.email", "test@example.com");
+  await git(root, "config", "user.name", "Test");
+  const source = join(root, "source");
+  await mkdir(join(source, "issues"), { recursive: true });
+  await writeFile(join(root, "README.md"), "base\n");
+  await writeFile(join(source, "spec.md"), "# Example\n");
+  await writeFile(join(source, "issues", "01-works.md"), "# Integration work\n- [ ] implemented\n");
+  await git(root, "add", "README.md", "source");
+  await git(root, "commit", "-m", "baseline");
+
+  const adapter = createNativeAdapter({
+    spawn: async ({ ticket, worktree }) => {
+      await writeFile(join(worktree, "README.md"), "feature\n");
+      await git(worktree, "add", "README.md");
+      await git(worktree, "commit", "-m", `implement ${ticket.id}`);
+      return { ticket, worktree, commit: await currentHead(worktree) };
+    },
+    collect: async (task) => `RESULT: DONE\nCOMMITS: ${task.commit}\nTESTS: none\nSUMMARY: ${task.ticket.id}`,
+  });
+  const coordinator = createExecutionCoordinator({
+    adapter,
+    now: () => "2026-07-17T08:00:00+08:00",
+    generateCommitMessage: async () => ":memo: 记录 Example 的执行结果",
+  });
+  await coordinator.initialize({
+    repository: root,
+    branch: "feat/example",
+    worktreePath,
+    tracker: { tracker: "local", specPath: join(source, "spec.md"), issuesDirectory: join(source, "issues"), featureSlug: "example", now: "2026-07-17T08:00:00+08:00" },
+  });
+  await writeFile(join(root, "README.md"), "main\n");
+
+  await assert.rejects(
+    coordinator.run({
+      repository: root,
+      branch: "feat/example",
+      featureSlug: "example",
+      worktreePath,
+      review: async () => ({ approved: true, findingsSummary: "no findings" }),
+    }),
+    /Could not restore unrelated main worktree changes from stash [0-9a-f]+/,
+  );
+  assert.equal((await gitOutput(root, "stash", "list")).includes("execute-mattpocock-spec:example"), true);
+  assert.equal((await readCheckpoint(root, "example")).integration.status, "done");
+  assert.equal((await gitOutput(root, "show", "--name-only", "--format=", "HEAD")).includes(".scratch/example/checkpoint.json"), true);
 });
 
 test("reports an exact diagnostic when a completed Ticket commit is absent", async (t) => {
