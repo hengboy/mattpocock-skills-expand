@@ -9,7 +9,7 @@ A mutable record of the lifecycle and recovery point for one MattPocock Spec exe
 _Avoid_: state file, `blocking_edges`
 
 **Execution Plan**:
-An immutable, materialized snapshot of one MattPocock Spec and Issue source references, their Ticket facts, acceptance facts, and prerequisites. It is the input to an execution and is distinct from its Checkpoint; source content remains in the committed Spec and Issue files.
+An immutable, materialized snapshot of one MattPocock Spec and Issue source references, their Ticket facts, and prerequisites. It is the input to an execution and is distinct from its Checkpoint; source content and work items remain in the committed Spec and Issue files.
 _Avoid_: spec copy, issue cache
 
 **Execution Coordinator**:

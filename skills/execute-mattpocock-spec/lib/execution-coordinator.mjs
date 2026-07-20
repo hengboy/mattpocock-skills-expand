@@ -2,7 +2,7 @@ import { checkpointPath, planPath } from "./paths.mjs";
 import { beginReview, blockTicket, completeIntegration, completeReview, completeTicket, createCheckpoint, markMerged, readCheckpoint, relocateCheckpoint, startTickets, writeCheckpoint } from "./checkpoint.mjs";
 import { verifyCheckpointIntegrity } from "./checkpoint-integrity.mjs";
 import { currentHead, git, gitSucceeds, isAncestor } from "./git.mjs";
-import { assertLocalPlanInMainWorktree, checkLocalTicketBoxes, createTrackerMaterializer, localTicketPaths, readPlan, verifyPlan, writePlan } from "./plan.mjs";
+import { assertLocalPlanInMainWorktree, checkLocalTicketBoxes, createTicketReader, createTrackerMaterializer, localTicketPaths, readPlan, verifyPlan, writePlan } from "./plan.mjs";
 import { assertCompletionResult } from "./validation.mjs";
 import { createFeatureWorktree, ensureFeatureWorktree, findFeatureWorktree, findMainWorktree, removeFeatureWorktree, worktreeIsClean } from "./worktree-lifecycle.mjs";
 
@@ -90,9 +90,11 @@ export function createExecutionCoordinator({ adapter, directExecutor, materializ
   return {
     async initialize({ repository, branch, baseline, worktreePath, tracker }) {
       baseline ??= await currentHead(repository);
-      const plan = await materialize(tracker);
+      const localMainWorktree = tracker.tracker === "local" ? await findMainWorktree(repository) : null;
+      if (tracker.tracker === "local" && !localMainWorktree) throw new Error("Main worktree is unavailable");
+      const plan = await materialize(localMainWorktree ? { ...tracker, mainWorktree: localMainWorktree } : tracker);
       verifyPlan(plan);
-      const mainWorktree = await findMainWorktree(repository);
+      const mainWorktree = localMainWorktree ?? await findMainWorktree(repository);
       if (!mainWorktree) throw new Error("Main worktree is unavailable");
       await assertLocalPlanInMainWorktree({ mainWorktree, plan });
       const worktree = await createFeatureWorktree({ repository, branch, baseline, path: worktreePath });
@@ -138,7 +140,7 @@ export function createExecutionCoordinator({ adapter, directExecutor, materializ
       return { status: "resumed", worktree: ensured.worktree, mainWorktree, plan, checkpoint, ...integrity };
     },
 
-    async executeFrontier({ worktree, mainWorktree, featureSlug, plan, checkpoint }) {
+    async executeFrontier({ worktree, mainWorktree, featureSlug, plan, checkpoint, readTicket = createTicketReader({ mainWorktree, plan }) }) {
       if (checkpoint.tickets.some((ticket) => ticket.status === "blocked")) {
         return { status: "blocked", checkpoint, results: [] };
       }
@@ -159,7 +161,7 @@ export function createExecutionCoordinator({ adapter, directExecutor, materializ
       let rawResults;
       if (executionMode === "coordinator") {
         try {
-          rawResults = [await directExecutor({ ticket: frontier[0], worktree, plan })];
+          rawResults = [await directExecutor({ ticket: frontier[0], worktree, plan, readTicket })];
         } catch (error) {
           rawResults = [{
             ticket_id: frontier[0].id,
@@ -216,8 +218,9 @@ export function createExecutionCoordinator({ adapter, directExecutor, materializ
       }
       if (execution.status === "complete") return execution;
       let { worktree, mainWorktree, plan, checkpoint } = execution;
+      const readTicket = createTicketReader({ mainWorktree, plan });
       while (checkpoint.status === "executing") {
-        const result = await this.executeFrontier({ worktree, mainWorktree, featureSlug, plan, checkpoint });
+        const result = await this.executeFrontier({ worktree, mainWorktree, featureSlug, plan, checkpoint, readTicket });
         if (result.status === "blocked") return result;
         checkpoint = result.checkpoint;
         if (checkpoint.tickets.every((ticket) => ticket.status === "done")) {
@@ -226,7 +229,7 @@ export function createExecutionCoordinator({ adapter, directExecutor, materializ
       }
       if (checkpoint.status === "reviewing") {
         if (!review) return { status: "reviewing", worktree, plan, checkpoint };
-        const reviewResult = await review({ worktree, plan, checkpoint });
+        const reviewResult = await review({ worktree, plan, checkpoint, readTicket });
         if (reviewResult?.approved !== true || !reviewResult.findingsSummary) {
           return { status: "reviewing", worktree, plan, checkpoint };
         }

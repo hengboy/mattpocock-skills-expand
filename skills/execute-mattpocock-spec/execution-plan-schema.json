@@ -6,7 +6,7 @@
   "required": ["version", "revision", "created_at", "execution_mode", "spec", "tickets"],
   "additionalProperties": false,
   "properties": {
-    "version": { "const": 2 },
+    "version": { "const": 3 },
     "revision": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "created_at": { "type": "string", "format": "date-time" },
     "execution_mode": {
@@ -20,7 +20,6 @@
       "additionalProperties": false,
       "properties": {
         "ref": { "type": "string", "minLength": 1 },
-        "issues_directory": { "type": "string", "minLength": 1 },
         "tracker": { "type": "string", "enum": ["local", "github", "gitlab", "other"] },
         "feature_slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
         "title": { "type": "string", "minLength": 1 }
@@ -31,14 +30,14 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["id", "title", "level", "blocked_by", "acceptance"],
+        "required": ["id", "ref", "title", "level", "blocked_by"],
         "additionalProperties": false,
         "properties": {
           "id": { "type": "string", "minLength": 1 },
+          "ref": { "type": "string", "minLength": 1 },
           "title": { "type": "string", "minLength": 1 },
           "level": { "type": "integer", "minimum": 0 },
-          "blocked_by": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-          "acceptance": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+          "blocked_by": { "type": "array", "items": { "type": "string", "minLength": 1 } }
         }
       }
     }

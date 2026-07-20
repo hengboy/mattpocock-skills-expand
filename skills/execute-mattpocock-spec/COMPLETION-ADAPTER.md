@@ -9,7 +9,7 @@ const adapter = createNativeAdapter({ spawn, collect });
 const results = await adapter.executeFrontier({ tickets, worktree });
 ```
 
-- `spawn({ ticket, worktree })` 创建一个原生任务。
+- `spawn({ ticket, worktree })` 创建一个原生任务；`ticket.ref` 是仓库相对的 Issue 路径，原生任务需要工作项时从 `worktree` 读取该文件。
 - `collect(task)` 等待该任务的原生终态并返回其终态文本。
 - `executeFrontier` 先派发整个 Frontier，再收集全部结果；某个 Ticket blocked 不会提前结束收集。
 

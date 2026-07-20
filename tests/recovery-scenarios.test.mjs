@@ -40,7 +40,7 @@ test("recovers a missing feature worktree from its committed Plan and Checkpoint
   const baseline = await currentHead(root);
   const worktree = join(root, "nested", "feature-worktree");
   await createFeatureWorktree({ repository: root, branch: "feat/example", baseline, path: worktree });
-  const plan = await materializeLocalPlan({ specPath: join(source, "spec.md"), issuesDirectory: join(source, "issues"), featureSlug: "example", now: "2026-07-17T08:00:00+08:00" });
+  const plan = await materializeLocalPlan({ mainWorktree: root, specPath: join(source, "spec.md"), issuesDirectory: join(source, "issues"), featureSlug: "example", now: "2026-07-17T08:00:00+08:00" });
   await writePlan(root, plan);
   const checkpoint = createCheckpoint({ plan, baseline, branch: "feat/example", worktree, now: "2026-07-17T08:00:00+08:00" });
   await writeCheckpoint(root, "example", checkpoint);
@@ -77,7 +77,10 @@ test("commits execution records while restoring unrelated main worktree changes"
   await git(root, "commit", "-m", "baseline");
 
   const adapter = createNativeAdapter({
-    spawn: async ({ ticket, worktree }) => {
+    spawn: async ({ ticket, worktree, readTicket }) => {
+      assert.equal(readTicket, undefined);
+      assert.equal(ticket.ref, "source/issues/01-works.md");
+      assert.equal(await readFile(join(worktree, ticket.ref), "utf8"), "# Integration work\n- [ ] implemented\n");
       await writeFile(join(worktree, `${ticket.id}.txt`), "implemented\n");
       await git(worktree, "add", `${ticket.id}.txt`);
       await git(worktree, "commit", "-m", `implement ${ticket.id}`);
@@ -187,7 +190,7 @@ test("reports an exact diagnostic when a completed Ticket commit is absent", asy
   const baseline = await currentHead(root);
   const worktree = join(root, "nested", "feature-worktree");
   await createFeatureWorktree({ repository: root, branch: "feat/example", baseline, path: worktree });
-  const plan = await materializeLocalPlan({ specPath: join(source, "spec.md"), issuesDirectory: join(source, "issues"), featureSlug: "example", now: "2026-07-17T08:00:00+08:00" });
+  const plan = await materializeLocalPlan({ mainWorktree: root, specPath: join(source, "spec.md"), issuesDirectory: join(source, "issues"), featureSlug: "example", now: "2026-07-17T08:00:00+08:00" });
   await writePlan(root, plan);
   const checkpoint = createCheckpoint({ plan, baseline, branch: "feat/example", worktree, now: "2026-07-17T08:00:00+08:00" });
   checkpoint.tickets[0] = { id: "spec", status: "done", end_commit: "deadbeef", completed_at: "2026-07-17T08:01:00+08:00" };
@@ -232,7 +235,9 @@ test("coordinates the complete lifecycle and persists completion on main", async
     },
   });
   let reviewAttempts = 0;
-  const review = async () => {
+  const review = async ({ readTicket }) => {
+    assert.equal(await readTicket("01"), "# Works\n- [x] implemented\n");
+    assert.equal(await readTicket("02"), "# Also works\nBlocked by: 01\n- [x] implemented\n");
     assert.equal(await currentHead(root), baseline, "execution records must remain uncommitted until review passes");
     assert.deepEqual(
       [
@@ -305,10 +310,11 @@ test("executes an automatically coordinator-owned single Ticket without a Comple
   await git(root, "commit", "-m", "baseline");
   let directExecutions = 0;
   const coordinator = createExecutionCoordinator({
-    directExecutor: async ({ ticket, worktree, plan }) => {
+    directExecutor: async ({ ticket, worktree, plan, readTicket }) => {
       directExecutions += 1;
       assert.equal(ticket.id, "spec");
       assert.equal(plan.execution_mode, "coordinator");
+      assert.equal(await readTicket(ticket.id), "# Direct change\n- [ ] implemented\n");
       await writeFile(join(worktree, "direct.txt"), "implemented\n");
       await git(worktree, "add", "direct.txt");
       await git(worktree, "commit", "-m", "implement direct ticket");
@@ -335,7 +341,10 @@ test("executes an automatically coordinator-owned single Ticket without a Comple
       featureSlug: "direct-change",
       now: "2026-07-17T08:00:00+08:00",
     },
-    review: async () => ({ approved: true, findingsSummary: "no findings" }),
+    review: async ({ readTicket }) => {
+      assert.equal(await readTicket("spec"), "# Direct change\n- [x] implemented\n");
+      return { approved: true, findingsSummary: "no findings" };
+    },
   });
   assert.equal(complete.status, "complete");
   assert.equal(directExecutions, 1);
@@ -353,7 +362,7 @@ test("automatically delegates a multi-Ticket Plan", async (t) => {
   await writeFile(join(source, "spec.md"), "# Example\n");
   await writeFile(join(issuesDirectory, "01-first.md"), "# First\n");
   await writeFile(join(issuesDirectory, "02-second.md"), "# Second\n");
-  const plan = await materializeLocalPlan({ specPath: join(source, "spec.md"), issuesDirectory, featureSlug: "example" });
+  const plan = await materializeLocalPlan({ mainWorktree: root, specPath: join(source, "spec.md"), issuesDirectory, featureSlug: "example" });
   assert.equal(plan.execution_mode, "delegated");
 });
 
@@ -368,7 +377,7 @@ test("preserves Ticket dependencies written with a Markdown-formatted label", as
   await writeFile(join(issuesDirectory, "02-second.md"), "# Second\n**Blocked by:** 01\n");
   await writeFile(join(issuesDirectory, "03-third.md"), "# Third\nBlocked by: 02\n");
 
-  const plan = await materializeLocalPlan({ specPath: join(source, "spec.md"), issuesDirectory, featureSlug: "example" });
+  const plan = await materializeLocalPlan({ mainWorktree: root, specPath: join(source, "spec.md"), issuesDirectory, featureSlug: "example" });
 
   assert.deepEqual(plan.tickets.map(({ id, blocked_by, level }) => ({ id, blocked_by, level })), [
     { id: "01", blocked_by: [], level: 0 },

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, realpath, writeFile } from "node:fs/promises";
-import { basename, isAbsolute, join, relative } from "node:path";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { planPath } from "./paths.mjs";
 import { assertExecutionPlan } from "./validation.mjs";
 
@@ -8,8 +8,8 @@ function titleFrom(content, fallback) {
   return content.match(/^#\s+(.+)$/m)?.[1].trim() || fallback;
 }
 
-function acceptanceFrom(content) {
-  return [...content.matchAll(/^\s*- \[[ xX]\]\s+(.+)$/gm)].map((match) => match[1]);
+function workItemCountFrom(content) {
+  return [...content.matchAll(/^\s*- \[[ xX]\]\s+.+$/gm)].length;
 }
 
 function blockedByFrom(content) {
@@ -44,8 +44,20 @@ function revisionFor(facts) {
   return createHash("sha256").update(JSON.stringify(facts)).digest("hex");
 }
 
+function relativePathWithin(worktree, path) {
+  const relativePath = relative(worktree, path);
+  if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
+    throw new Error(`Local tracker file must be inside the main worktree: ${path}`);
+  }
+  return relativePath;
+}
+
+async function sourceRefWithin(worktree, path) {
+  return relativePathWithin(worktree, await realpath(path));
+}
+
 const DIRECT_EXECUTION_MAX_CONTENT_LENGTH = 1000;
-const DIRECT_EXECUTION_MAX_ACCEPTANCE_ITEMS = 2;
+const DIRECT_EXECUTION_MAX_WORK_ITEMS = 2;
 const COMPLEX_TICKET_PATTERN = /\b(?:database|migration|schema|auth(?:entication|orization)?|security|payment|billing|deploy(?:ment)?|release|api|breaking|performance|concurren(?:cy|t)|parallel|integrat(?:e|ion)|distributed|cache)\b|数据库|数据迁移|迁移|鉴权|认证|授权|安全|支付|账单|部署|发布|接口|兼容|性能|并发|集成|分布式|缓存/i;
 
 function executionModeFor(tickets) {
@@ -53,29 +65,35 @@ function executionModeFor(tickets) {
   const [ticket] = tickets;
   const task = `${ticket.title}\n${ticket.content}`;
   if (ticket.content.length > DIRECT_EXECUTION_MAX_CONTENT_LENGTH) return "delegated";
-  if (ticket.acceptance.length > DIRECT_EXECUTION_MAX_ACCEPTANCE_ITEMS) return "delegated";
+  if (ticket.work_item_count > DIRECT_EXECUTION_MAX_WORK_ITEMS) return "delegated";
   return COMPLEX_TICKET_PATTERN.test(task) ? "delegated" : "coordinator";
 }
 
-function withoutContent({ content, ...ticket }) {
+function planTicketFrom({ content, work_item_count, ...ticket }) {
   return ticket;
 }
 
-export async function materializeLocalPlan({ specPath, issuesDirectory, featureSlug, now = new Date().toISOString() }) {
-  const spec = await readFile(specPath, "utf8");
-  const issueNames = await readdir(issuesDirectory).catch((error) => {
+export async function materializeLocalPlan({ mainWorktree, specPath, issuesDirectory, featureSlug, now = new Date().toISOString() }) {
+  const mainRoot = await realpath(mainWorktree);
+  const sourceSpecPath = resolve(specPath);
+  const sourceIssuesDirectory = resolve(issuesDirectory);
+  const spec = await readFile(sourceSpecPath, "utf8");
+  const specRef = await sourceRefWithin(mainRoot, sourceSpecPath);
+  const issueNames = await readdir(sourceIssuesDirectory).catch((error) => {
     if (error.code === "ENOENT") return [];
     throw error;
   });
   const issueFiles = issueNames.filter((name) => /^\d+-.+\.md$/.test(name)).sort();
   const issueTickets = await Promise.all(issueFiles.map(async (name) => {
-    const content = await readFile(join(issuesDirectory, name), "utf8");
+    const issuePath = join(sourceIssuesDirectory, name);
+    const content = await readFile(issuePath, "utf8");
     const [, id, slug] = name.match(/^(\d+)-(.+)\.md$/);
     return {
       id,
+      ref: await sourceRefWithin(mainRoot, issuePath),
       title: titleFrom(content, slug),
       blocked_by: blockedByFrom(content),
-      acceptance: acceptanceFrom(content),
+      work_item_count: workItemCountFrom(content),
       content,
     };
   }));
@@ -83,18 +101,19 @@ export async function materializeLocalPlan({ specPath, issuesDirectory, featureS
     ? levelsFor(issueTickets)
     : [{
       id: "spec",
+      ref: specRef,
       title: titleFrom(spec, basename(specPath, ".md")),
       level: 0,
       blocked_by: [],
-      acceptance: acceptanceFrom(spec),
+      work_item_count: workItemCountFrom(spec),
       content: spec,
     }];
   const facts = {
-    version: 2,
+    version: 3,
     created_at: now,
     execution_mode: executionModeFor(sourceTickets),
-    spec: { ref: specPath, issues_directory: issuesDirectory, tracker: "local", feature_slug: featureSlug, title: titleFrom(spec, featureSlug) },
-    tickets: sourceTickets.map(withoutContent),
+    spec: { ref: specRef, tracker: "local", feature_slug: featureSlug, title: titleFrom(spec, featureSlug) },
+    tickets: sourceTickets.map(planTicketFrom),
   };
   return { ...facts, revision: revisionFor(facts) };
 }
@@ -112,20 +131,24 @@ export async function readPlan(worktree, featureSlug) {
 }
 
 async function pathWithin(worktree, path) {
-  const relativePath = relative(await realpath(worktree), await realpath(path));
-  if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
-    throw new Error(`Local tracker file must be inside the main worktree: ${path}`);
-  }
-  return relativePath;
+  return relativePathWithin(await realpath(worktree), await realpath(path));
 }
 
 export async function assertLocalPlanInMainWorktree({ mainWorktree, plan }) {
   if (plan.spec.tracker !== "local") return;
-  await pathWithin(mainWorktree, plan.spec.ref);
-  if (plan.tickets.some((ticket) => ticket.id !== "spec")) {
-    if (!plan.spec.issues_directory) throw new Error("Local Execution Plan does not identify its issues directory");
-    await pathWithin(mainWorktree, plan.spec.issues_directory);
-  }
+  const mainRoot = await realpath(mainWorktree);
+  await pathWithin(mainRoot, resolve(mainRoot, plan.spec.ref));
+  await Promise.all(plan.tickets.map((ticket) => pathWithin(mainRoot, resolve(mainRoot, ticket.ref))));
+}
+
+export function createTicketReader({ mainWorktree, plan }) {
+  return async function readTicket(ticketId) {
+    if (plan.spec.tracker !== "local") {
+      throw new Error(`Ticket source reading is unavailable for tracker: ${plan.spec.tracker}`);
+    }
+    const { issuePath } = await localTicketPath({ mainWorktree, plan, ticketId });
+    return readFile(issuePath, "utf8");
+  };
 }
 
 export async function checkLocalTicketBoxes({ mainWorktree, plan, ticketId }) {
@@ -149,16 +172,7 @@ export async function localTicketPaths({ mainWorktree, plan }) {
 async function localTicketPath({ mainWorktree, plan, ticketId }) {
   const ticket = plan.tickets.find((candidate) => candidate.id === ticketId);
   if (!ticket) throw new Error(`Unknown Plan Ticket: ${ticketId}`);
-  let issuePath;
-  if (ticketId === "spec") {
-    issuePath = plan.spec.ref;
-  } else {
-    if (!plan.spec.issues_directory) throw new Error("Local Execution Plan does not identify its issues directory");
-    const issueNames = await readdir(plan.spec.issues_directory);
-    const issueName = issueNames.find((name) => name.match(new RegExp(`^${ticketId.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}-.*\\.md$`)));
-    if (!issueName) throw new Error(`Local Issue file is missing for Ticket ${ticketId}`);
-    issuePath = join(plan.spec.issues_directory, issueName);
-  }
+  const issuePath = resolve(await realpath(mainWorktree), ticket.ref);
   return { issuePath, relativePath: await pathWithin(mainWorktree, issuePath) };
 }
 

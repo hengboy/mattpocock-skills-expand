@@ -12,9 +12,9 @@
 
 自动判断 Spec 是否已被 `to-tickets` skill 拆分为多个 Ticket：
 - **已拆分**：按 frontier 层级逐层分派子代理（层内并行），每个子代理加载 `implement` skill 实施对应 Ticket
-- **未拆分**：按复杂度自动选择。内容不超过 1000 字符、验收项不超过 2 条且不涉及高风险领域的单 Ticket，由主代理直接实施；其余委派单个子代理执行 `implement` skill
+- **未拆分**：按复杂度自动选择。内容不超过 1000 字符、工作项不超过 2 条且不涉及高风险领域的单 Ticket，由主代理直接实施；其余委派单个子代理执行 `implement` skill
 
-多 Ticket 一律由子代理实施；单 Ticket 的 `execution_mode` 则按内容长度、验收项数量和高风险领域词自动写入 Plan。主代理只在自动判定为低复杂度的单 Ticket 中直接实施。最终双轴 `code-review` 与用户确认的评审修复必须由主代理在 feature worktree 中完成。每个 Spec 只有一个 `feat/{feature-slug}` worktree，且它只承载实现代码。主代理在 `main` 更新 Issue 复选框、不可变 `plan.json` 和可变 `checkpoint.json`，待全部 Ticket 完成、最终 `code-review` 通过并完成整合清理后，由 `git-commit` 生成贴合实际变更的提交信息后统一提交。Execution Coordinator 将这些主仓库记录、worktree 生命周期和 Completion Adapter 串成可恢复流程。`execution_mode: coordinator` 通过注入的 `directExecutor` 返回相同的 Completion Result；`delegated` 则由 Completion Adapter 注入 Codex/Claude 或 OpenCode 的原生 spawn/collect capability。没有 capability 时后者返回结构化 blocked 结果。
+多 Ticket 一律由子代理实施；单 Ticket 的 `execution_mode` 则按内容长度、工作项数量和高风险领域词自动写入 Plan。主代理只在自动判定为低复杂度的单 Ticket 中直接实施。最终双轴 `code-review` 与用户确认的评审修复必须由主代理在 feature worktree 中完成。每个 Spec 只有一个 `feat/{feature-slug}` worktree，且它只承载实现代码。主代理在 `main` 更新 Issue 复选框、不可变 `plan.json` 和可变 `checkpoint.json`，待全部 Ticket 完成、最终 `code-review` 通过并完成整合清理后，由 `git-commit` 生成贴合实际变更的提交信息后统一提交。Execution Coordinator 将这些主仓库记录、worktree 生命周期和 Completion Adapter 串成可恢复流程。`execution_mode: coordinator` 通过注入的 `directExecutor` 返回相同的 Completion Result；`delegated` 则由 Completion Adapter 注入 Codex/Claude 或 OpenCode 的原生 spawn/collect capability。没有 capability 时后者返回结构化 blocked 结果。
 
 > 示例：一个 Spec 拆分成 5 个 Ticket，01 blocked_by 空，02 blocked_by 01，03/04 blocked_by 02，05 blocked_by 03/04。
 > - Level 0（01）→ 委派子代理 → 完成

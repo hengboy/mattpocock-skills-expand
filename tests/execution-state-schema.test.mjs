@@ -17,12 +17,12 @@ const validatePlan = ajv.compile(planSchema);
 const validateCheckpoint = ajv.compile(checkpointSchema);
 
 const plan = {
-  version: 2,
+  version: 3,
   revision: "a".repeat(64),
   created_at: "2026-07-17T08:00:00+08:00",
   execution_mode: "delegated",
   spec: { ref: ".scratch/example/spec.md", tracker: "local", feature_slug: "example", title: "Example" },
-  tickets: [{ id: "spec", title: "Example", level: 0, blocked_by: [], acceptance: [] }],
+  tickets: [{ id: "spec", ref: "spec.md", title: "Example", level: 0, blocked_by: [] }],
 };
 
 test("accepts an immutable Execution Plan", () => {
@@ -30,9 +30,9 @@ test("accepts an immutable Execution Plan", () => {
   assert.equal(validatePlan({ ...plan, tickets: [] }), false);
 });
 
-test("rejects Plan content", () => {
+test("rejects Plan content and copied work items", () => {
   assert.equal(validatePlan({ ...plan, spec: { ...plan.spec, content: "# Example" } }), false);
-  assert.equal(validatePlan({ ...plan, tickets: [{ ...plan.tickets[0], content: "# Example" }] }), false);
+  assert.equal(validatePlan({ ...plan, tickets: [{ ...plan.tickets[0], acceptance: ["implemented"] }] }), false);
 });
 
 test("materializes Plans without copying Spec or Issue content", async (t) => {
@@ -44,28 +44,30 @@ test("materializes Plans without copying Spec or Issue content", async (t) => {
   await writeFile(specPath, "# Example\nSpec-only detail\n");
   await writeFile(join(issuesDirectory, "01-example.md"), "# Example Ticket\nIssue-only detail\n- [ ] implemented\n");
 
-  const materialized = await materializeLocalPlan({ specPath, issuesDirectory, featureSlug: "example" });
+  const materialized = await materializeLocalPlan({ mainWorktree: directory, specPath, issuesDirectory, featureSlug: "example" });
 
-  assert.equal(materialized.version, 2);
+  assert.equal(materialized.version, 3);
+  assert.equal(materialized.spec.ref, "spec.md");
+  assert.equal(materialized.tickets[0].ref, "issues/01-example.md");
   assert.equal("content" in materialized.spec, false);
   assert.equal("content" in materialized.tickets[0], false);
-  assert.equal(materialized.tickets[0].acceptance[0], "implemented");
+  assert.equal("acceptance" in materialized.tickets[0], false);
   assert.equal(verifyPlan(materialized), materialized);
 });
 
-test("delegates a complex single Ticket automatically", async (t) => {
+test("delegates a single Ticket with too many work items automatically", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "execution-complexity-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const issuesDirectory = join(directory, "issues");
   const cases = [
     ["risk.md", "# Database migration\n- [ ] preserve data\n"],
-    ["acceptance.md", "# Example\n- [ ] first\n- [ ] second\n- [ ] third\n"],
+    ["work-items.md", "# Example\n- [ ] first\n- [ ] second\n- [ ] third\n"],
     ["long.md", `# Example\n${"a".repeat(1001)}`],
   ];
   for (const [name, content] of cases) {
     const specPath = join(directory, name);
     await writeFile(specPath, content);
-    const plan = await materializeLocalPlan({ specPath, issuesDirectory, featureSlug: "example" });
+    const plan = await materializeLocalPlan({ mainWorktree: directory, specPath, issuesDirectory, featureSlug: "example" });
     assert.equal(plan.execution_mode, "delegated", name);
   }
 });
@@ -75,7 +77,7 @@ test("uses coordinator mode at the 1000-character content limit", async (t) => {
   t.after(() => rm(directory, { recursive: true, force: true }));
   const specPath = join(directory, "spec.md");
   await writeFile(specPath, `# Example\n${"a".repeat(990)}`);
-  const plan = await materializeLocalPlan({ specPath, issuesDirectory: join(directory, "issues"), featureSlug: "example" });
+  const plan = await materializeLocalPlan({ mainWorktree: directory, specPath, issuesDirectory: join(directory, "issues"), featureSlug: "example" });
   assert.equal(plan.execution_mode, "coordinator");
 });
 
