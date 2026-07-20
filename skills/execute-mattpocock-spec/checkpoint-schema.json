@@ -17,7 +17,7 @@
       }
     },
     "status": { "type": "string", "enum": ["executing", "reviewing", "integrating", "complete"] },
-    "baseline": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+    "baseline": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
     "branch": { "type": "string", "minLength": 1 },
     "worktree": { "type": "string", "pattern": "^(?:/|[A-Za-z]:[\\\\/])" },
     "created_at": { "type": "string", "format": "date-time" },
@@ -31,8 +31,8 @@
         "properties": {
           "id": { "type": "string", "minLength": 1 },
           "status": { "type": "string", "enum": ["pending", "in_progress", "done", "blocked"] },
-          "start_commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
-          "end_commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+          "start_commit": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
+          "end_commit": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
           "error": { "type": "string", "minLength": 1 },
           "started_at": { "type": "string", "format": "date-time" },
           "completed_at": { "type": "string", "format": "date-time" }
@@ -57,7 +57,7 @@
       "type": "object",
       "required": ["status", "target_branch"],
       "additionalProperties": false,
-      "properties": { "status": { "type": "string", "enum": ["pending", "merged", "done"] }, "target_branch": { "const": "main" }, "feature_head": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" }, "main_worktree": { "type": "string" }, "merged_commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" }, "merged_at": { "type": "string", "format": "date-time" }, "cleaned_up_at": { "type": "string", "format": "date-time" } },
+      "properties": { "status": { "type": "string", "enum": ["pending", "merged", "done"] }, "target_branch": { "const": "main" }, "feature_head": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" }, "main_worktree": { "type": "string" }, "merged_commit": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" }, "merged_at": { "type": "string", "format": "date-time" }, "cleaned_up_at": { "type": "string", "format": "date-time" } },
       "allOf": [
         { "if": { "properties": { "status": { "const": "merged" } }, "required": ["status"] }, "then": { "required": ["feature_head", "main_worktree", "merged_commit", "merged_at"], "properties": { "feature_head": true, "main_worktree": true, "merged_commit": true, "merged_at": true } } },
         { "if": { "properties": { "status": { "const": "done" } }, "required": ["status"] }, "then": { "required": ["feature_head", "main_worktree", "merged_commit", "merged_at", "cleaned_up_at"], "properties": { "feature_head": true, "main_worktree": true, "merged_commit": true, "merged_at": true, "cleaned_up_at": true } } }

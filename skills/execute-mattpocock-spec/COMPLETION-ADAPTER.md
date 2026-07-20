@@ -23,7 +23,7 @@ Codex/Claude 和 OpenCode 分别将自己的原生 Agent/Task capability 注入 
 
 ```text
 RESULT: DONE | BLOCKED
-COMMITS: <DONE 时为一个或多个 SHA；BLOCKED 时为 none>
+COMMITS: <DONE 时为一个或多个完整 SHA；BLOCKED 时为 none>
 TESTS: <已运行测试；没有则 none>
 SUMMARY: <非空摘要>
 ERROR: <仅 RESULT=BLOCKED 时填写，且非空>
@@ -31,7 +31,7 @@ ERROR: <仅 RESULT=BLOCKED 时填写，且非空>
 
 `normalizeCompletion` 解析并验证协议。`completion-result-schema.json` 是字段格式的权威：
 
-- `done` 至少有一个 SHA，且没有 `error`。
+- `done` 至少有一个完整 SHA（SHA-1 为 40 位，SHA-256 为 64 位），且没有 `error`。
 - `blocked` 没有 SHA，且有非空 `error`。
 - `TESTS: none` 映射为 `[]`。
 

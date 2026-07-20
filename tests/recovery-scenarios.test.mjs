@@ -193,11 +193,11 @@ test("reports an exact diagnostic when a completed Ticket commit is absent", asy
   const plan = await materializeLocalPlan({ mainWorktree: root, specPath: join(source, "spec.md"), issuesDirectory: join(source, "issues"), featureSlug: "example", now: "2026-07-17T08:00:00+08:00" });
   await writePlan(root, plan);
   const checkpoint = createCheckpoint({ plan, baseline, branch: "feat/example", worktree, now: "2026-07-17T08:00:00+08:00" });
-  checkpoint.tickets[0] = { id: "spec", status: "done", end_commit: "deadbeef", completed_at: "2026-07-17T08:01:00+08:00" };
+  checkpoint.tickets[0] = { id: "spec", status: "done", end_commit: "d".repeat(40), completed_at: "2026-07-17T08:01:00+08:00" };
   await writeCheckpoint(root, "example", checkpoint);
   const result = await verifyCheckpointIntegrity({ worktree: root, featureWorktree: worktree, featureSlug: "example" });
   assert.equal(result.status, "invalid");
-  assert.deepEqual(result.diagnostics, [{ code: "ticket-commit-missing", detail: "spec:deadbeef" }]);
+  assert.deepEqual(result.diagnostics, [{ code: "ticket-commit-missing", detail: `spec:${"d".repeat(40)}` }]);
 });
 
 test("coordinates the complete lifecycle and persists completion on main", async (t) => {
@@ -288,11 +288,11 @@ test("coordinates the complete lifecycle and persists completion on main", async
       "source/issues/02-also-works.md",
     ],
   }]);
-  complete.checkpoint.integration.merged_commit = "deadbeef";
+  complete.checkpoint.integration.merged_commit = "d".repeat(40);
   await writeCheckpoint(root, "example", complete.checkpoint);
   const staleMerge = await verifyCheckpointIntegrity({ worktree: root, featureSlug: "example" });
   assert.equal(staleMerge.status, "invalid");
-  assert.deepEqual(staleMerge.diagnostics, [{ code: "merged-commit-missing", detail: "deadbeef" }]);
+  assert.deepEqual(staleMerge.diagnostics, [{ code: "merged-commit-missing", detail: "d".repeat(40) }]);
 });
 
 test("executes an automatically coordinator-owned single Ticket without a Completion Adapter", async (t) => {

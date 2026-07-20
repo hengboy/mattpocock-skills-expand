@@ -23,7 +23,7 @@ export function normalizeCompletion({ ticketId, raw }) {
   if (!result || !commitsText || !testsText || !summary) return protocolError(ticketId, "missing required terminal fields");
   if (result !== "DONE" && result !== "BLOCKED") return protocolError(ticketId, "RESULT must be DONE or BLOCKED");
   const commits = commitsText === "none" ? [] : commitsText.split(/[\s,]+/).filter(Boolean);
-  if (commits.some((commit) => !/^[0-9a-f]{7,40}$/.test(commit))) return protocolError(ticketId, "COMMITS contains an invalid SHA");
+  if (commits.some((commit) => !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(commit))) return protocolError(ticketId, "COMMITS contains an invalid SHA");
   const tests = testsText === "none" ? [] : [testsText];
   if (result === "DONE" && (commits.length === 0 || error)) return protocolError(ticketId, "DONE requires commits and forbids ERROR");
   if (result === "BLOCKED" && (commits.length > 0 || !error)) return protocolError(ticketId, "BLOCKED requires ERROR and forbids commits");
