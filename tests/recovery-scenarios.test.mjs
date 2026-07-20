@@ -357,6 +357,26 @@ test("automatically delegates a multi-Ticket Plan", async (t) => {
   assert.equal(plan.execution_mode, "delegated");
 });
 
+test("preserves Ticket dependencies written with a Markdown-formatted label", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "spec-markdown-dependencies-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const source = join(root, "source");
+  const issuesDirectory = join(source, "issues");
+  await mkdir(issuesDirectory, { recursive: true });
+  await writeFile(join(source, "spec.md"), "# Example\n");
+  await writeFile(join(issuesDirectory, "01-first.md"), "# First\n");
+  await writeFile(join(issuesDirectory, "02-second.md"), "# Second\n**Blocked by:** 01\n");
+  await writeFile(join(issuesDirectory, "03-third.md"), "# Third\nBlocked by: 02\n");
+
+  const plan = await materializeLocalPlan({ specPath: join(source, "spec.md"), issuesDirectory, featureSlug: "example" });
+
+  assert.deepEqual(plan.tickets.map(({ id, blocked_by, level }) => ({ id, blocked_by, level })), [
+    { id: "01", blocked_by: [], level: 0 },
+    { id: "02", blocked_by: ["01"], level: 1 },
+    { id: "03", blocked_by: ["02"], level: 2 },
+  ]);
+});
+
 test("records a direct executor failure as a blocked Ticket", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "spec-direct-failure-"));
   const worktreePath = `${root}-feature`;

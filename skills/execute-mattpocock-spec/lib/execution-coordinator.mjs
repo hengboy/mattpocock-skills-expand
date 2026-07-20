@@ -146,7 +146,7 @@ export function createExecutionCoordinator({ adapter, directExecutor, materializ
       if (unfinished.length === 0) throw new Error("No unfinished Ticket remains");
       const activeLevel = Math.min(...unfinished.map((ticket) => ticket.level));
       const frontier = plan.tickets.filter((ticket) => ticket.level === activeLevel && ["pending", "in_progress"].includes(checkpoint.tickets.find((state) => state.id === ticket.id)?.status));
-      const executionMode = plan.execution_mode ?? "delegated";
+      const executionMode = plan.execution_mode;
       if (executionMode === "coordinator") {
         if (!directExecutor) throw new Error("A direct executor is required for coordinator execution");
         if (frontier.length !== 1) throw new Error("Coordinator execution requires exactly one active Ticket");

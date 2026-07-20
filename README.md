@@ -73,7 +73,7 @@ ln -s $(pwd)/mattpocock-skills-expand/skills/execute-mattpocock-spec ~/.agents/s
 
 ## Execution Plan 与 Checkpoint
 
-主仓库中的 `.scratch/<feature>/plan.json` 是不可变的 Spec/Ticket 快照，`.scratch/<feature>/checkpoint.json` 只记录执行生命周期。主代理在每个 Ticket 完成后，在主仓库勾选对应本地 Issue 复选框并更新 Checkpoint；所有这些改动在全部 Ticket 完成、最终 `code-review` 通过并完成整合清理后统一提交。恢复模块从 main 读取已提交记录、在 feature `HEAD` 验证 Ticket commits；汇总提交前只能在保留这些改动的同一 main worktree 恢复。旧 `state.json` 不兼容且不迁移。
+主仓库中的 `.scratch/<feature>/plan.json` 是不可变的 Spec/Issue 源引用与 Ticket 派生事实快照，正文仍保留在 Git 中的 Spec/Issue 文件；`.scratch/<feature>/checkpoint.json` 只记录执行生命周期。主代理在每个 Ticket 完成后，在主仓库勾选对应本地 Issue 复选框并更新 Checkpoint；所有这些改动在全部 Ticket 完成、最终 `code-review` 通过并完成整合清理后统一提交。恢复模块从 main 读取已提交记录、在 feature `HEAD` 验证 Ticket commits；汇总提交前只能在保留这些改动的同一 main worktree 恢复。旧 `state.json` 不兼容且不迁移。
 
 ## 文件结构
 

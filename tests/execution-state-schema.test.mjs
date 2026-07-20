@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import test from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { beginReview, blockTicket, completeIntegration, completeReview, completeTicket, createCheckpoint, markMerged, relocateCheckpoint, startTickets, writeCheckpoint } from "../skills/execute-mattpocock-spec/lib/checkpoint.mjs";
-import { createTrackerMaterializer, materializeLocalPlan, verifyPlan, writePlan } from "../skills/execute-mattpocock-spec/lib/plan.mjs";
+import { materializeLocalPlan, verifyPlan, writePlan } from "../skills/execute-mattpocock-spec/lib/plan.mjs";
 import { createExecutionCoordinator } from "../skills/execute-mattpocock-spec/lib/execution-coordinator.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,11 +17,12 @@ const validatePlan = ajv.compile(planSchema);
 const validateCheckpoint = ajv.compile(checkpointSchema);
 
 const plan = {
-  version: 1,
+  version: 2,
   revision: "a".repeat(64),
   created_at: "2026-07-17T08:00:00+08:00",
-  spec: { ref: ".scratch/example/spec.md", tracker: "local", feature_slug: "example", title: "Example", content: "# Example" },
-  tickets: [{ id: "spec", title: "Example", level: 0, blocked_by: [], acceptance: [], content: "# Example" }],
+  execution_mode: "delegated",
+  spec: { ref: ".scratch/example/spec.md", tracker: "local", feature_slug: "example", title: "Example" },
+  tickets: [{ id: "spec", title: "Example", level: 0, blocked_by: [], acceptance: [] }],
 };
 
 test("accepts an immutable Execution Plan", () => {
@@ -29,16 +30,27 @@ test("accepts an immutable Execution Plan", () => {
   assert.equal(validatePlan({ ...plan, tickets: [] }), false);
 });
 
-test("records automatically selected execution mode when a non-local adapter omits it", async (t) => {
-  const directory = await mkdtemp(join(tmpdir(), "execution-mode-"));
+test("rejects Plan content and an older format version", () => {
+  assert.equal(validatePlan({ ...plan, version: 1 }), false);
+  assert.equal(validatePlan({ ...plan, spec: { ...plan.spec, content: "# Example" } }), false);
+  assert.equal(validatePlan({ ...plan, tickets: [{ ...plan.tickets[0], content: "# Example" }] }), false);
+});
+
+test("materializes Plans without copying Spec or Issue content", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "execution-plan-content-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
+  const issuesDirectory = join(directory, "issues");
   const specPath = join(directory, "spec.md");
-  await writeFile(specPath, "# Example\n");
-  const localPlan = await materializeLocalPlan({ specPath, issuesDirectory: join(directory, "issues"), featureSlug: "example" });
-  const { execution_mode, ...legacyPlan } = localPlan;
-  const materialize = createTrackerMaterializer({ other: async () => ({ ...legacyPlan, spec: { ...legacyPlan.spec, tracker: "other" } }) });
-  const materialized = await materialize({ tracker: "other" });
-  assert.equal(materialized.execution_mode, "delegated");
+  await mkdir(issuesDirectory);
+  await writeFile(specPath, "# Example\nSpec-only detail\n");
+  await writeFile(join(issuesDirectory, "01-example.md"), "# Example Ticket\nIssue-only detail\n- [ ] implemented\n");
+
+  const materialized = await materializeLocalPlan({ specPath, issuesDirectory, featureSlug: "example" });
+
+  assert.equal(materialized.version, 2);
+  assert.equal("content" in materialized.spec, false);
+  assert.equal("content" in materialized.tickets[0], false);
+  assert.equal(materialized.tickets[0].acceptance[0], "implemented");
   assert.equal(verifyPlan(materialized), materialized);
 });
 
@@ -129,7 +141,8 @@ test("returns a structured blocked outcome without re-dispatching a blocked Tick
 });
 
 test("rejects an invalid materialized Plan before creating a worktree", async () => {
-  const coordinator = createExecutionCoordinator({ materialize: async () => ({ ...plan, revision: "bad" }) });
+  const { execution_mode, ...incompletePlan } = plan;
+  const coordinator = createExecutionCoordinator({ materialize: async () => incompletePlan });
   await assert.rejects(
     coordinator.initialize({ repository: "/not-used", branch: "feat/example", baseline: "abcdef1", worktreePath: "/not-used-worktree", tracker: {} }),
     /Execution Plan/,

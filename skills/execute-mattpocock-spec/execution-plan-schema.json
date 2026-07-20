@@ -3,28 +3,27 @@
   "$id": "https://mattpocock/skills/execute-mattpocock-spec/execution-plan.schema.json",
   "title": "execute-mattpocock-spec Execution Plan",
   "type": "object",
-  "required": ["version", "revision", "created_at", "spec", "tickets"],
+  "required": ["version", "revision", "created_at", "execution_mode", "spec", "tickets"],
   "additionalProperties": false,
   "properties": {
-    "version": { "const": 1 },
+    "version": { "const": 2 },
     "revision": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "created_at": { "type": "string", "format": "date-time" },
     "execution_mode": {
       "type": "string",
       "enum": ["coordinator", "delegated"],
-      "description": "单 Ticket Spec 的实施者；省略时为 delegated，以兼容已有 Plan。"
+      "description": "单 Ticket Spec 的实施者。"
     },
     "spec": {
       "type": "object",
-      "required": ["ref", "tracker", "feature_slug", "title", "content"],
+      "required": ["ref", "tracker", "feature_slug", "title"],
       "additionalProperties": false,
       "properties": {
         "ref": { "type": "string", "minLength": 1 },
         "issues_directory": { "type": "string", "minLength": 1 },
         "tracker": { "type": "string", "enum": ["local", "github", "gitlab", "other"] },
         "feature_slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
-        "title": { "type": "string", "minLength": 1 },
-        "content": { "type": "string" }
+        "title": { "type": "string", "minLength": 1 }
       }
     },
     "tickets": {
@@ -32,15 +31,14 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["id", "title", "level", "blocked_by", "acceptance", "content"],
+        "required": ["id", "title", "level", "blocked_by", "acceptance"],
         "additionalProperties": false,
         "properties": {
           "id": { "type": "string", "minLength": 1 },
           "title": { "type": "string", "minLength": 1 },
           "level": { "type": "integer", "minimum": 0 },
           "blocked_by": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-          "acceptance": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-          "content": { "type": "string" }
+          "acceptance": { "type": "array", "items": { "type": "string", "minLength": 1 } }
         }
       }
     }

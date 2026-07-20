@@ -13,7 +13,7 @@ function acceptanceFrom(content) {
 }
 
 function blockedByFrom(content) {
-  const value = content.match(/^Blocked by:\s*(.*)$/mi)?.[1] || "";
+  const value = content.match(/^(?:\*\*)?Blocked by:(?:\*\*)?\s*(.*)$/mi)?.[1] || "";
   return [...new Set(value.match(/\b\d+\b/g) || [])];
 }
 
@@ -57,11 +57,8 @@ function executionModeFor(tickets) {
   return COMPLEX_TICKET_PATTERN.test(task) ? "delegated" : "coordinator";
 }
 
-function withExecutionMode(plan) {
-  if (plan.execution_mode) return plan;
-  const { revision, ...facts } = plan;
-  const withMode = { ...facts, execution_mode: "delegated" };
-  return { ...withMode, revision: revisionFor(withMode) };
+function withoutContent({ content, ...ticket }) {
+  return ticket;
 }
 
 export async function materializeLocalPlan({ specPath, issuesDirectory, featureSlug, now = new Date().toISOString() }) {
@@ -82,7 +79,7 @@ export async function materializeLocalPlan({ specPath, issuesDirectory, featureS
       content,
     };
   }));
-  const tickets = issueTickets.length >= 1
+  const sourceTickets = issueTickets.length >= 1
     ? levelsFor(issueTickets)
     : [{
       id: "spec",
@@ -93,11 +90,11 @@ export async function materializeLocalPlan({ specPath, issuesDirectory, featureS
       content: spec,
     }];
   const facts = {
-    version: 1,
+    version: 2,
     created_at: now,
-    execution_mode: executionModeFor(tickets),
-    spec: { ref: specPath, issues_directory: issuesDirectory, tracker: "local", feature_slug: featureSlug, title: titleFrom(spec, featureSlug), content: spec },
-    tickets,
+    execution_mode: executionModeFor(sourceTickets),
+    spec: { ref: specPath, issues_directory: issuesDirectory, tracker: "local", feature_slug: featureSlug, title: titleFrom(spec, featureSlug) },
+    tickets: sourceTickets.map(withoutContent),
   };
   return { ...facts, revision: revisionFor(facts) };
 }
@@ -180,6 +177,6 @@ export function createTrackerMaterializer(adapters = {}) {
     if (input.tracker === "local") return materializeLocalPlan(input);
     const adapter = adapters[input.tracker];
     if (!adapter) throw new Error(`Tracker ${input.tracker} is blocked: no materialization adapter is configured`);
-    return withExecutionMode(await adapter(input));
+    return adapter(input);
   };
 }
