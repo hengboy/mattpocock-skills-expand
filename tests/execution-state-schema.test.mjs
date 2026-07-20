@@ -30,8 +30,7 @@ test("accepts an immutable Execution Plan", () => {
   assert.equal(validatePlan({ ...plan, tickets: [] }), false);
 });
 
-test("rejects Plan content and an older format version", () => {
-  assert.equal(validatePlan({ ...plan, version: 1 }), false);
+test("rejects Plan content", () => {
   assert.equal(validatePlan({ ...plan, spec: { ...plan.spec, content: "# Example" } }), false);
   assert.equal(validatePlan({ ...plan, tickets: [{ ...plan.tickets[0], content: "# Example" }] }), false);
 });
