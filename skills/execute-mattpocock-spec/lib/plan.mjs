@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, realpath, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { planPath } from "./paths.mjs";
+import { toShanghaiTimestamp } from "./time.mjs";
 import { assertExecutionPlan } from "./validation.mjs";
 
 function titleFrom(content, fallback) {
@@ -73,7 +74,8 @@ function planTicketFrom({ content, work_item_count, ...ticket }) {
   return ticket;
 }
 
-export async function materializeLocalPlan({ mainWorktree, specPath, issuesDirectory, featureSlug, now = new Date().toISOString() }) {
+export async function materializeLocalPlan({ mainWorktree, specPath, issuesDirectory, featureSlug, now = new Date() }) {
+  now = toShanghaiTimestamp(now);
   const mainRoot = await realpath(mainWorktree);
   const sourceSpecPath = resolve(specPath);
   const sourceIssuesDirectory = resolve(issuesDirectory);

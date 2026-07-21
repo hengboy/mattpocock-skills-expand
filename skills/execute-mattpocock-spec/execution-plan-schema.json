@@ -1,6 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mattpocock/skills/execute-mattpocock-spec/execution-plan.schema.json",
+  "$defs": {
+    "shanghai-date-time": { "type": "string", "format": "date-time", "pattern": "\\+08:00$" }
+  },
   "title": "execute-mattpocock-spec Execution Plan",
   "type": "object",
   "required": ["version", "revision", "created_at", "execution_mode", "spec", "tickets"],
@@ -8,7 +11,7 @@
   "properties": {
     "version": { "const": 3 },
     "revision": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-    "created_at": { "type": "string", "format": "date-time" },
+    "created_at": { "$ref": "#/$defs/shanghai-date-time" },
     "execution_mode": {
       "type": "string",
       "enum": ["coordinator", "delegated"],

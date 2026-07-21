@@ -4,6 +4,7 @@ import { verifyCheckpointIntegrity } from "./checkpoint-integrity.mjs";
 import { currentHead, git, gitSucceeds, isAncestor } from "./git.mjs";
 import { assertLocalPlanInMainWorktree, checkLocalTicketBoxes, createTicketReader, createTrackerMaterializer, localTicketPaths, readPlan, verifyPlan, writePlan } from "./plan.mjs";
 import { assertCompletionResult } from "./validation.mjs";
+import { toShanghaiTimestamp } from "./time.mjs";
 import { createFeatureWorktree, ensureFeatureWorktree, findFeatureWorktree, findMainWorktree, removeFeatureWorktree, worktreeIsClean } from "./worktree-lifecycle.mjs";
 
 async function commitFiles(worktree, files, message) {
@@ -86,7 +87,7 @@ async function assertResultCommits(worktree, result) {
   }
 }
 
-export function createExecutionCoordinator({ adapter, directExecutor, materialize = createTrackerMaterializer(), now = () => new Date().toISOString(), generateCommitMessage } = {}) {
+export function createExecutionCoordinator({ adapter, directExecutor, materialize = createTrackerMaterializer(), now = toShanghaiTimestamp, generateCommitMessage } = {}) {
   return {
     async initialize({ repository, branch, baseline, worktreePath, tracker }) {
       baseline ??= await currentHead(repository);

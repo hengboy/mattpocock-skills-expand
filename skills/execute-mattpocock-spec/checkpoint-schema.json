@@ -1,6 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mattpocock/skills/execute-mattpocock-spec/checkpoint.schema.json",
+  "$defs": {
+    "shanghai-date-time": { "type": "string", "format": "date-time", "pattern": "\\+08:00$" }
+  },
   "title": "execute-mattpocock-spec Checkpoint",
   "type": "object",
   "required": ["version", "plan", "status", "baseline", "branch", "worktree", "created_at", "updated_at", "tickets", "review", "integration", "history"],
@@ -20,8 +23,8 @@
     "baseline": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
     "branch": { "type": "string", "minLength": 1 },
     "worktree": { "type": "string", "pattern": "^(?:/|[A-Za-z]:[\\\\/])" },
-    "created_at": { "type": "string", "format": "date-time" },
-    "updated_at": { "type": "string", "format": "date-time" },
+    "created_at": { "$ref": "#/$defs/shanghai-date-time" },
+    "updated_at": { "$ref": "#/$defs/shanghai-date-time" },
     "tickets": {
       "type": "array",
       "items": {
@@ -34,8 +37,8 @@
           "start_commit": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
           "end_commit": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
           "error": { "type": "string", "minLength": 1 },
-          "started_at": { "type": "string", "format": "date-time" },
-          "completed_at": { "type": "string", "format": "date-time" }
+          "started_at": { "$ref": "#/$defs/shanghai-date-time" },
+          "completed_at": { "$ref": "#/$defs/shanghai-date-time" }
         },
         "allOf": [
           { "if": { "properties": { "status": { "const": "in_progress" } }, "required": ["status"] }, "then": { "required": ["start_commit", "started_at"], "properties": { "start_commit": true, "started_at": true } } },
@@ -48,7 +51,7 @@
       "type": "object",
       "required": ["status"],
       "additionalProperties": false,
-      "properties": { "status": { "type": "string", "enum": ["pending", "in_progress", "done"] }, "findings_summary": { "type": "string", "minLength": 1 }, "started_at": { "type": "string", "format": "date-time" }, "completed_at": { "type": "string", "format": "date-time" } },
+      "properties": { "status": { "type": "string", "enum": ["pending", "in_progress", "done"] }, "findings_summary": { "type": "string", "minLength": 1 }, "started_at": { "$ref": "#/$defs/shanghai-date-time" }, "completed_at": { "$ref": "#/$defs/shanghai-date-time" } },
       "allOf": [
         { "if": { "properties": { "status": { "const": "done" } }, "required": ["status"] }, "then": { "required": ["findings_summary", "completed_at"], "properties": { "findings_summary": true, "completed_at": true } } }
       ]
@@ -57,13 +60,13 @@
       "type": "object",
       "required": ["status", "target_branch"],
       "additionalProperties": false,
-      "properties": { "status": { "type": "string", "enum": ["pending", "merged", "done"] }, "target_branch": { "const": "main" }, "feature_head": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" }, "main_worktree": { "type": "string" }, "merged_commit": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" }, "merged_at": { "type": "string", "format": "date-time" }, "cleaned_up_at": { "type": "string", "format": "date-time" } },
+      "properties": { "status": { "type": "string", "enum": ["pending", "merged", "done"] }, "target_branch": { "const": "main" }, "feature_head": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" }, "main_worktree": { "type": "string" }, "merged_commit": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" }, "merged_at": { "$ref": "#/$defs/shanghai-date-time" }, "cleaned_up_at": { "$ref": "#/$defs/shanghai-date-time" } },
       "allOf": [
         { "if": { "properties": { "status": { "const": "merged" } }, "required": ["status"] }, "then": { "required": ["feature_head", "main_worktree", "merged_commit", "merged_at"], "properties": { "feature_head": true, "main_worktree": true, "merged_commit": true, "merged_at": true } } },
         { "if": { "properties": { "status": { "const": "done" } }, "required": ["status"] }, "then": { "required": ["feature_head", "main_worktree", "merged_commit", "merged_at", "cleaned_up_at"], "properties": { "feature_head": true, "main_worktree": true, "merged_commit": true, "merged_at": true, "cleaned_up_at": true } } }
       ]
     },
-    "history": { "type": "array", "items": { "type": "object", "required": ["event", "detail", "at"], "additionalProperties": false, "properties": { "event": { "type": "string", "minLength": 1 }, "detail": { "type": "string", "minLength": 1 }, "at": { "type": "string", "format": "date-time" } } } }
+    "history": { "type": "array", "items": { "type": "object", "required": ["event", "detail", "at"], "additionalProperties": false, "properties": { "event": { "type": "string", "minLength": 1 }, "detail": { "type": "string", "minLength": 1 }, "at": { "$ref": "#/$defs/shanghai-date-time" } } } }
   },
   "allOf": [
     { "if": { "properties": { "status": { "const": "complete" } }, "required": ["status"] }, "then": { "properties": { "integration": { "type": "object", "properties": { "status": { "const": "done" } }, "required": ["status"] } } } }

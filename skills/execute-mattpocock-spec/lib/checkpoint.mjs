@@ -1,9 +1,11 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { checkpointPath } from "./paths.mjs";
+import { toShanghaiTimestamp } from "./time.mjs";
 import { assertCheckpoint } from "./validation.mjs";
 
-export function createCheckpoint({ plan, baseline, branch, worktree, now = new Date().toISOString() }) {
+export function createCheckpoint({ plan, baseline, branch, worktree, now = new Date() }) {
+  now = toShanghaiTimestamp(now);
   return {
     version: 1,
     plan: { path: `.scratch/${plan.spec.feature_slug}/plan.json`, revision: plan.revision },
@@ -43,7 +45,8 @@ function revise(checkpoint, event, detail, now) {
   return next;
 }
 
-export function startTickets(checkpoint, ticketIds, startCommit, now = new Date().toISOString()) {
+export function startTickets(checkpoint, ticketIds, startCommit, now = new Date()) {
+  now = toShanghaiTimestamp(now);
   const next = revise(checkpoint, "dispatched", ticketIds.join(", "), now);
   for (const ticket of next.tickets) {
     if (ticketIds.includes(ticket.id)) {
@@ -56,7 +59,8 @@ export function startTickets(checkpoint, ticketIds, startCommit, now = new Date(
   return next;
 }
 
-export function completeTicket(checkpoint, ticketId, endCommit, now = new Date().toISOString()) {
+export function completeTicket(checkpoint, ticketId, endCommit, now = new Date()) {
+  now = toShanghaiTimestamp(now);
   const next = revise(checkpoint, "done", ticketId, now);
   const ticket = next.tickets.find((candidate) => candidate.id === ticketId);
   if (!ticket || ticket.status !== "in_progress") throw new Error(`Ticket ${ticketId} is not in progress`);
@@ -67,7 +71,8 @@ export function completeTicket(checkpoint, ticketId, endCommit, now = new Date()
   return next;
 }
 
-export function blockTicket(checkpoint, ticketId, error, now = new Date().toISOString()) {
+export function blockTicket(checkpoint, ticketId, error, now = new Date()) {
+  now = toShanghaiTimestamp(now);
   const next = revise(checkpoint, "blocked", ticketId, now);
   const ticket = next.tickets.find((candidate) => candidate.id === ticketId);
   if (!ticket || ticket.status !== "in_progress") throw new Error(`Ticket ${ticketId} is not in progress`);
@@ -76,13 +81,15 @@ export function blockTicket(checkpoint, ticketId, error, now = new Date().toISOS
   return next;
 }
 
-export function relocateCheckpoint(checkpoint, worktree, now = new Date().toISOString()) {
+export function relocateCheckpoint(checkpoint, worktree, now = new Date()) {
+  now = toShanghaiTimestamp(now);
   const next = revise(checkpoint, "worktree-relocated", worktree, now);
   next.worktree = worktree;
   return next;
 }
 
-export function beginReview(checkpoint, now = new Date().toISOString()) {
+export function beginReview(checkpoint, now = new Date()) {
+  now = toShanghaiTimestamp(now);
   if (checkpoint.tickets.some((ticket) => ticket.status !== "done")) {
     throw new Error("Cannot begin review while Tickets are not done");
   }
@@ -92,7 +99,8 @@ export function beginReview(checkpoint, now = new Date().toISOString()) {
   return next;
 }
 
-export function completeReview(checkpoint, findingsSummary, now = new Date().toISOString()) {
+export function completeReview(checkpoint, findingsSummary, now = new Date()) {
+  now = toShanghaiTimestamp(now);
   const next = revise(checkpoint, "reviewed", findingsSummary, now);
   if (next.review.status !== "in_progress") throw new Error("Review is not in progress");
   next.review = { ...next.review, status: "done", findings_summary: findingsSummary, completed_at: now };
@@ -100,14 +108,16 @@ export function completeReview(checkpoint, findingsSummary, now = new Date().toI
   return next;
 }
 
-export function markMerged(checkpoint, { featureHead, mainWorktree, mergedCommit }, now = new Date().toISOString()) {
+export function markMerged(checkpoint, { featureHead, mainWorktree, mergedCommit }, now = new Date()) {
+  now = toShanghaiTimestamp(now);
   const next = revise(checkpoint, "merged", mergedCommit, now);
   if (next.status !== "integrating") throw new Error("Checkpoint is not integrating");
   next.integration = { status: "merged", target_branch: "main", feature_head: featureHead, main_worktree: mainWorktree, merged_commit: mergedCommit, merged_at: now };
   return next;
 }
 
-export function completeIntegration(checkpoint, now = new Date().toISOString()) {
+export function completeIntegration(checkpoint, now = new Date()) {
+  now = toShanghaiTimestamp(now);
   const next = revise(checkpoint, "complete", "feature worktree removed", now);
   if (next.integration.status !== "merged") throw new Error("Feature branch has not been merged");
   next.integration = { ...next.integration, status: "done", cleaned_up_at: now };

@@ -6,6 +6,7 @@ import addFormats from "ajv-formats";
 import { beginReview, blockTicket, completeIntegration, completeReview, completeTicket, createCheckpoint, markMerged, relocateCheckpoint, startTickets, writeCheckpoint } from "../skills/execute-mattpocock-spec/lib/checkpoint.mjs";
 import { materializeLocalPlan, verifyPlan, writePlan } from "../skills/execute-mattpocock-spec/lib/plan.mjs";
 import { createExecutionCoordinator } from "../skills/execute-mattpocock-spec/lib/execution-coordinator.mjs";
+import { toShanghaiTimestamp } from "../skills/execute-mattpocock-spec/lib/time.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -35,6 +36,20 @@ const plan = {
 test("accepts an immutable Execution Plan", () => {
   assert.equal(validatePlan(plan), true, JSON.stringify(validatePlan.errors));
   assert.equal(validatePlan({ ...plan, tickets: [] }), false);
+  assert.equal(validatePlan({ ...plan, created_at: "2026-07-17T00:00:00Z" }), false);
+});
+
+test("normalizes JSON timestamps to Asia/Shanghai", () => {
+  assert.equal(toShanghaiTimestamp("2026-07-17T00:00:00.123Z"), "2026-07-17T08:00:00.123+08:00");
+  const checkpoint = createCheckpoint({
+    plan,
+    baseline: SHAS.baseline,
+    branch: "feat/example",
+    worktree: "/tmp/example",
+    now: "2026-07-17T00:00:00Z",
+  });
+  assert.equal(checkpoint.created_at, "2026-07-17T08:00:00.000+08:00");
+  assert.equal(validateCheckpoint({ ...checkpoint, updated_at: "2026-07-17T00:00:00Z" }), false);
 });
 
 test("rejects Plan content and copied work items", () => {
@@ -51,9 +66,10 @@ test("materializes Plans without copying Spec or Issue content", async (t) => {
   await writeFile(specPath, "# Example\nSpec-only detail\n");
   await writeFile(join(issuesDirectory, "01-example.md"), "# Example Ticket\nIssue-only detail\n- [ ] implemented\n");
 
-  const materialized = await materializeLocalPlan({ mainWorktree: directory, specPath, issuesDirectory, featureSlug: "example" });
+  const materialized = await materializeLocalPlan({ mainWorktree: directory, specPath, issuesDirectory, featureSlug: "example", now: "2026-07-17T00:00:00Z" });
 
   assert.equal(materialized.version, 3);
+  assert.equal(materialized.created_at, "2026-07-17T08:00:00.000+08:00");
   assert.equal(materialized.spec.ref, "spec.md");
   assert.equal(materialized.tickets[0].ref, "issues/01-example.md");
   assert.equal("content" in materialized.spec, false);

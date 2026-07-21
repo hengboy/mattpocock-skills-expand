@@ -13,6 +13,10 @@ disable-model-invocation: true
 - 必须存在 `docs/agents/issue-tracker.md`；缺少时先运行 `setup-matt-pocock-skills`。
 - 在 skill 目录运行 `npm run check:runtime`；安装与失败处理见 [运行时依赖](references/installation.md)。
 
+## JSON 时间
+
+Plan 和 Checkpoint 中的所有日期时间字段必须使用 `Asia/Shanghai`，以带 `+08:00` 偏移的 RFC 3339 格式写入或更新。不得写入 UTC `Z` 时间戳；schema 验证失败时停止流程。
+
 ## 1. 初始化
 
 1. 解析已签署 Spec，确定 feature slug、Tracker 与 `feat/<feature>` 分支。
