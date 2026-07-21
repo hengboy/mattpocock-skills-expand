@@ -11,4 +11,4 @@
 
 `invalid` 时显示 module 返回的精确 diagnostics；不得猜测、降级 Ticket、重派 `done` Ticket 或用 `git log` 文本匹配替代验证。路径变动时用 `relocateCheckpoint` 更新记录。
 
-有效 Checkpoint 的恢复规则为：`executing` 从最低未完成 Frontier 继续，`reviewing` 进入评审，`integrating` 只做整合清理，`complete` 只报告结果。先检查 main 上的 `merged` 和 `complete`，避免重建已整合的 worktree。
+**有效 Checkpoint 的恢复规则：** `executing` 从最低未完成 Frontier 继续，`reviewing` 进入评审，`integrating` 只做整合清理，`complete` 只报告结果。先检查 main 上的 `merged` 和 `complete`，避免重建已整合的 worktree。
