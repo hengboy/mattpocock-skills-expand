@@ -34,7 +34,7 @@ npx skills@latest add hengboy/mattpocock-skills-expand
 安装器必须同时安装 `skills/execute-mattpocock-spec/package.json` 和 `package-lock.json`，然后在该目录执行：
 
 ```bash
-npm ci --omit=dev
+npm run check:runtime
 ```
 
 不要只安装 `ajv` 和 `ajv-formats`；锁文件会同时恢复 AJV 的全部传递依赖。
@@ -45,8 +45,8 @@ npm ci --omit=dev
 # 克隆到本地
 git clone git@github.com:hengboy/mattpocock-skills-expand.git
 
-# 安装 skill 的锁定运行时依赖
-(cd mattpocock-skills-expand/skills/execute-mattpocock-spec && npm ci --omit=dev)
+# 安装并检查 skill 的锁定运行时依赖
+(cd mattpocock-skills-expand/skills/execute-mattpocock-spec && npm run check:runtime)
 
 # 链接到 agents 技能目录
 ln -s $(pwd)/mattpocock-skills-expand/skills/execute-mattpocock-spec ~/.agents/skills/execute-mattpocock-spec
@@ -87,7 +87,8 @@ mattpocock-skills-expand/
         ├── execution-plan-schema.json # 不可变 Plan 的 JSON Schema
         ├── checkpoint-schema.json # 可变 Checkpoint 的 JSON Schema
         ├── completion-result-schema.json # Completion Result 的 JSON Schema
-        ├── COMPLETION-ADAPTER.md  # Completion Adapter module
+        ├── references/            # 按需加载的架构与协议资料
+        ├── scripts/               # 可执行运行时预检
         ├── lib/                   # 可执行的生命周期 modules
         └── agents/
             └── openai.yaml        # Codex UI 元数据

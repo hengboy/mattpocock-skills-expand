@@ -16,14 +16,19 @@ async function runNode(cwd, environment = process.env) {
   });
 }
 
-test("installs locked runtime dependencies when the validation module cannot load", async (t) => {
+async function runRuntimeCheck(cwd) {
+  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+  return run(npm, ["run", "check:runtime"], { cwd });
+}
+
+test("runtime preflight installs locked dependencies when validation cannot load", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "execute-skill-runtime-"));
   const skill = join(directory, "execute-mattpocock-spec");
   t.after(() => rm(directory, { recursive: true, force: true }));
   await cp(sourceSkill, skill, { recursive: true });
   await rm(join(skill, "node_modules"), { recursive: true, force: true });
 
-  const { stderr } = await runNode(skill);
+  const { stderr } = await runRuntimeCheck(skill);
   assert.equal(stderr, "");
   const ajvFormats = JSON.parse(await readFile(join(skill, "node_modules", "ajv-formats", "package.json"), "utf8"));
   assert.equal(ajvFormats.version, "3.0.1");
